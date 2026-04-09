@@ -30,7 +30,7 @@ app.use(helmet({
             styleSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://fonts.googleapis.com"],
             fontSrc: ["'self'", "https://fonts.gstatic.com"],
             imgSrc: ["'self'", "data:", "https://cdn-icons-png.flaticon.com", "https://nominatim.openstreetmap.org"],
-            connectSrc: ["'self'", "http://127.0.0.1:3000", "http://localhost:3000"]
+            connectSrc: ["'self'", "https://pizzeria-backend-dryv.onrender.com"]
         }
     }
 }));
@@ -53,7 +53,7 @@ app.use((req, res, next) => {
     sanitize(req.params);
     next();
 });
-
+app.set('trust proxy', 1); 
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 100,
@@ -219,8 +219,13 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://mastrochris001_db_user
 mongoose.connect(MONGO_URI)
 .then(async () => {
     console.log("Forno acceso: MongoDB Connesso!");
-    await seedPizze(); 
-}).catch(err => console.error("Errore DB:", err));
+    try {
+        await seedPizze();
+    } catch(err) {
+        console.log("Seed pizze fallito:", err.message);
+    }
+})
+.catch(err => console.error("Errore DB:", err));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
