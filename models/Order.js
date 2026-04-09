@@ -1,0 +1,97 @@
+const mongoose = require('mongoose');
+
+const OrderSchema = new mongoose.Schema({
+    cliente: { 
+        type: mongoose.Schema.Types.ObjectId, 
+        ref: 'User', 
+        required: true 
+    },
+
+    
+    nomeClienteCustom: { 
+        type: String, 
+        default: "" 
+    },
+    
+    
+    telefonoCliente: {
+        type: String,
+        required: true
+    },
+
+    pizze: [
+        {
+            pizza: { 
+                type: mongoose.Schema.Types.ObjectId, 
+                ref: 'Pizza',
+                required: true
+            },
+            quantita: { 
+                type: Number, 
+                default: 1 
+            },
+            note: { 
+                type: String, 
+                default: "" 
+            }
+        }
+    ],
+    
+    totale: { 
+        type: Number, 
+        required: true 
+    },
+
+    tipoOrdine: {
+        type: String,
+        enum: ['tavolo', 'asporto', 'consegna'],
+        default: 'asporto'
+    },
+
+    orario: { 
+        type: String, 
+        required: true 
+    },
+
+    caricoSlot: { 
+        type: Number, 
+        required: true 
+    },
+
+    metodoPagamento: {
+        type: String,
+        enum: ['contanti', 'pos'],
+        default: 'contanti'
+    },
+
+    
+    pagato: {
+        type: Boolean,
+        default: false
+    },
+
+    indirizzoConsegna: {
+        type: String,
+        default: ""
+    },
+
+    
+    riderAssegnato: { 
+        type: mongoose.Schema.Types.ObjectId, 
+        ref: 'User',
+        default: null 
+    },
+    
+    stato: { 
+        type: String, 
+        enum: ['in attesa', 'in preparazione', 'pronto', 'in consegna', 'consegnato'], 
+        default: 'in attesa' 
+    },
+    
+    createdAt: { 
+        type: Date, 
+        default: Date.now 
+    }
+});
+
+module.exports = mongoose.model('Order', OrderSchema);

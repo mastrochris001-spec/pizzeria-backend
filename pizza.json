@@ -1,0 +1,16 @@
+[
+    {
+        "nome": "Margherita",
+        "tipologia": "Classica",
+        "prezzo": 6.50,
+        "ingredienti": ["Salsa di pomodoro", "Mozzarella", "Basilico", "Olio EVO"],
+        "foto": "link_foto_margherita.jpg"
+    },
+    {
+        "nome": "Diavola",
+        "tipologia": "Classica",
+        "prezzo": 7.50,
+        "ingredienti": ["Salsa di pomodoro", "Mozzarella", "Salame piccante"],
+        "foto": "link_foto_diavola.jpg"
+    }
+]
