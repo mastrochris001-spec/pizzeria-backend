@@ -214,7 +214,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/pizze', pizzaRoutes);
 app.use('/api/ordini', orderRoutes);
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/pizzeria_db';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://mastrochris001_db_user:VrtF7eykZDvawmYI@pizzieriadb.1fgezcm.mongodb.net/pizzeria_db?retryWrites=true&w=majority';
 
 mongoose.connect(MONGO_URI)
 .then(async () => {
