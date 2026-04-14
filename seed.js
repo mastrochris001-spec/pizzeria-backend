@@ -15,16 +15,24 @@ async function seedPizze() {
         const pizze = JSON.parse(data);
 
         
-        await Pizza.insertMany(pizze.map(p => ({
-            ...p,
-            isCommon: true
-        })));
+        await Pizza.insertMany(
+  pizze
+    .filter(p => p.categoria && p.nome && p.prezzo)
+    .map(p => ({
+      ...p,
+      isCommon: true
+    }))
+);
 
         console.log("Setup iniziale completato: Pizze caricate con successo dal file JSON!");
     } catch (error) {
         console.error("Errore durante il caricamento delle pizze:", error);
     }
 }
-
+pizze.forEach(p => {
+  if (!p.categoria) {
+    console.log("❌ SENZA CATEGORIA:", p);
+  }
+});
 
 module.exports = seedPizze;
