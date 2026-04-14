@@ -62,11 +62,9 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// --- AGGIORNAMENTO: GESTIONE SBLOCCO IMMAGINI ---
 app.use(express.static('frontend')); 
 app.use('/immagini', express.static(path.join(__dirname, 'immagini'))); // Cerca le immagini nella cartella principale
 app.use('/immagini', express.static(path.join(__dirname, 'frontend', 'immagini'))); // Cerca le immagini dentro frontend
-// ------------------------------------------------
 
 const swaggerOptions = {
     swaggerDefinition: {
