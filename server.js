@@ -6,6 +6,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const swaggerUi = require('swagger-ui-express');
 const swaggerJsDoc = require('swagger-jsdoc');
+const path = require('path'); // AGGIUNTO: Modulo per gestire i percorsi dei file
 const seedPizze = require('./seed');
 
 const User = require('./models/User'); 
@@ -30,7 +31,7 @@ app.use(helmet({
             styleSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://fonts.googleapis.com"],
             fontSrc: ["'self'", "https://fonts.gstatic.com"],
             imgSrc: ["'self'", "data:", "https://cdn-icons-png.flaticon.com", "https://nominatim.openstreetmap.org"],
-            connectSrc: ["'self'", "https://pizzeria-backend-dryv.onrender.com"]
+            connectSrc: ["'self'", "http://127.0.0.1:3000", "http://localhost:3000"]
         }
     }
 }));
@@ -53,7 +54,7 @@ app.use((req, res, next) => {
     sanitize(req.params);
     next();
 });
-app.set('trust proxy', 1); 
+
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 100,
@@ -61,7 +62,11 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
+// --- AGGIORNAMENTO: GESTIONE SBLOCCO IMMAGINI ---
 app.use(express.static('frontend')); 
+app.use('/immagini', express.static(path.join(__dirname, 'immagini'))); // Cerca le immagini nella cartella principale
+app.use('/immagini', express.static(path.join(__dirname, 'frontend', 'immagini'))); // Cerca le immagini dentro frontend
+// ------------------------------------------------
 
 const swaggerOptions = {
     swaggerDefinition: {
@@ -214,18 +219,13 @@ app.use('/api/auth', authRoutes);
 app.use('/api/pizze', pizzaRoutes);
 app.use('/api/ordini', orderRoutes);
 
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://mastrochris001_db_user:VrtF7eykZDvawmYI@pizzieriadb.1fgezcm.mongodb.net/pizzeria_db?retryWrites=true&w=majority';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/pizzeria_db';
 
 mongoose.connect(MONGO_URI)
 .then(async () => {
     console.log("Forno acceso: MongoDB Connesso!");
-    try {
-        await seedPizze();
-    } catch(err) {
-        console.log("Seed pizze fallito:", err.message);
-    }
-})
-.catch(err => console.error("Errore DB:", err));
+    await seedPizze(); 
+}).catch(err => console.error("Errore DB:", err));
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
