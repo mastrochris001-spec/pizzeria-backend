@@ -18,13 +18,10 @@ const userSchema = new mongoose.Schema({
     },
 
  
-    isApprovato: { 
-        type: mongoose.Schema.Types.Mixed, 
-        default: function() {
-        
-            return this.role === 'cliente' ? true : false;
-        }
-    },
+isApprovato: {
+    type: Boolean,
+    default: true
+},
 
     indirizzo: { type: String }, 
     telefono: { type: String },
