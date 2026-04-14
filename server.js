@@ -26,13 +26,14 @@ app.use(cors({
     origin: [
         'http://localhost:3000',
         'http://127.0.0.1:3000',
-        'https://mastrochris.it'
+        'https://mastrochris.it',
+        'https://pizzeria-backend-dryv.onrender.com'
     ],
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+    methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
     credentials: true
 }));
 
-app.options('*', cors());
+
 
 app.use(helmet({
     contentSecurityPolicy: {
