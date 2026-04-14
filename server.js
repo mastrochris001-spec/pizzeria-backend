@@ -23,7 +23,6 @@ const app = express();
 app.set('trust proxy', 1);
 
 app.use(cors({
-app.options('*', cors());
     origin: [
         'http://localhost:3000',
         'http://127.0.0.1:3000',
@@ -32,6 +31,8 @@ app.options('*', cors());
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     credentials: true
 }));
+
+app.options('*', cors());
 
 app.use(helmet({
     contentSecurityPolicy: {
