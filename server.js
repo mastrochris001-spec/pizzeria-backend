@@ -21,7 +21,15 @@ const orderRoutes = require('./routes/orderRoutes');
 
 const app = express();
 
-app.use(cors());
+app.use(cors({
+    origin: [
+        'http://localhost:3000',
+        'http://127.0.0.1:3000',
+        'https://mastrochris.it'
+    ],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+    credentials: true
+}));
 
 app.use(helmet({
     contentSecurityPolicy: {
@@ -31,7 +39,13 @@ app.use(helmet({
             styleSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://fonts.googleapis.com"],
             fontSrc: ["'self'", "https://fonts.gstatic.com"],
             imgSrc: ["'self'", "data:", "https://cdn-icons-png.flaticon.com", "https://nominatim.openstreetmap.org"],
-            connectSrc: ["'self'", "http://127.0.0.1:3000", "http://localhost:3000"]
+            connectSrc: [
+    "'self'",
+    "http://127.0.0.1:3000",
+    "http://localhost:3000",
+    "https://mastrochris.it",
+    "https://pizzeria-backend-dryv.onrender.com"
+]
         }
     }
 }));
