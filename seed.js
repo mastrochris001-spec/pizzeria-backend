@@ -14,6 +14,11 @@ async function seedPizze() {
         const data = fs.readFileSync('pizza.json', 'utf8');
         const pizze = JSON.parse(data);
 
+pizze.forEach(p => {
+  if (!p.categoria) {
+    console.log("❌ SENZA CATEGORIA:", p);
+  }
+});
         
         await Pizza.insertMany(
   pizze
@@ -29,10 +34,5 @@ async function seedPizze() {
         console.error("Errore durante il caricamento delle pizze:", error);
     }
 }
-pizze.forEach(p => {
-  if (!p.categoria) {
-    console.log("❌ SENZA CATEGORIA:", p);
-  }
-});
 
 module.exports = seedPizze;
