@@ -23,6 +23,7 @@ const app = express();
 app.set('trust proxy', 1);
 
 app.use(cors({
+app.options('*', cors());
     origin: [
         'http://localhost:3000',
         'http://127.0.0.1:3000',
@@ -73,6 +74,8 @@ app.use((req, res, next) => {
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
     message: "Troppe richieste, riprova piu tardi."
 });
 app.use('/api/', limiter);
