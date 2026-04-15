@@ -154,20 +154,44 @@ app.patch('/api/inventory/:data', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ========================================================
+// LA ROTTA MODIFICATA PER GESTIRE L'AGGIORNAMENTO COMPLETO
+// ========================================================
 app.patch('/api/ordini/:id/modifica', async (req, res) => {
     try {
         const Order = require('./models/Order');
-        const { pizze, totale, tipoOrdine, indirizzoConsegna, metodoPagamento } = req.body;
+        const { 
+            pizze, totale, tipoOrdine, indirizzoConsegna, 
+            metodoPagamento, orario, caricoSlot, noteConsegna, citofono
+        } = req.body;
+        
+        const datiDaAggiornare = {};
+        if (pizze) datiDaAggiornare.pizze = pizze;
+        if (totale !== undefined) datiDaAggiornare.totale = totale;
+        if (tipoOrdine) datiDaAggiornare.tipoOrdine = tipoOrdine;
+        if (indirizzoConsegna !== undefined) datiDaAggiornare.indirizzoConsegna = indirizzoConsegna;
+        if (metodoPagamento) datiDaAggiornare.metodoPagamento = metodoPagamento;
+        if (orario) datiDaAggiornare.orario = orario;
+        if (caricoSlot !== undefined) datiDaAggiornare.caricoSlot = caricoSlot;
+        if (noteConsegna !== undefined) datiDaAggiornare.noteConsegna = noteConsegna;
+        if (citofono !== undefined) datiDaAggiornare.citofono = citofono;
+
         const updatedOrder = await Order.findByIdAndUpdate(
             req.params.id, 
-            { pizze, totale, tipoOrdine, indirizzoConsegna, metodoPagamento }, 
+            { $set: datiDaAggiornare }, 
             { new: true }
         );
+
+        if (!updatedOrder) {
+            return res.status(404).json({ message: "Ordine non trovato" });
+        }
+
         res.json(updatedOrder);
     } catch(err) {
         res.status(500).json({ error: err.message });
     }
 });
+// ========================================================
 
 app.get('/api/ingredienti-esauriti', async (req, res) => {
     try {
