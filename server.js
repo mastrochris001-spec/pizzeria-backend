@@ -6,7 +6,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const swaggerUi = require('swagger-ui-express');
 const swaggerJsDoc = require('swagger-jsdoc');
-const path = require('path'); // AGGIUNTO: Modulo per gestire i percorsi dei file
+const path = require('path');
 const seedPizze = require('./seed');
 
 const User = require('./models/User'); 
@@ -33,8 +33,6 @@ app.use(cors({
     credentials: true
 }));
 
-
-
 app.use(helmet({
     contentSecurityPolicy: {
         directives: {
@@ -44,12 +42,12 @@ app.use(helmet({
             fontSrc: ["'self'", "https://fonts.gstatic.com"],
             imgSrc: ["'self'", "data:", "https://cdn-icons-png.flaticon.com", "https://nominatim.openstreetmap.org"],
             connectSrc: [
-    "'self'",
-    "http://127.0.0.1:3000",
-    "http://localhost:3000",
-    "https://mastrochris.it",
-    "https://pizzeria-backend-dryv.onrender.com"
-]
+                "'self'",
+                "http://127.0.0.1:3000",
+                "http://localhost:3000",
+                "https://mastrochris.it",
+                "https://pizzeria-backend-dryv.onrender.com"
+            ]
         }
     }
 }));
@@ -83,8 +81,8 @@ const limiter = rateLimit({
 app.use('/api/', limiter);
 
 app.use(express.static('frontend')); 
-app.use('/immagini', express.static(path.join(__dirname, 'immagini'))); // Cerca le immagini nella cartella principale
-app.use('/immagini', express.static(path.join(__dirname, 'frontend', 'immagini'))); // Cerca le immagini dentro frontend
+app.use('/immagini', express.static(path.join(__dirname, 'immagini')));
+app.use('/immagini', express.static(path.join(__dirname, 'frontend', 'immagini')));
 
 const swaggerOptions = {
     swaggerDefinition: {
@@ -230,6 +228,15 @@ app.get('/api/ordini/storico-personale', async (req, res) => {
         res.json(ordini);
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/forza-inserimento', async (req, res) => {
+    try {
+        await seedPizze();
+        res.send("<h1>Pizze inserite con successo nel database!</h1><p>Torna al sito e aggiorna la pagina.</p>");
+    } catch (error) {
+        res.send("<h1>Errore:</h1><p>" + error.message + "</p>");
     }
 });
 
