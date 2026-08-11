@@ -27,7 +27,8 @@ app.use(cors({
         'http://localhost:3000',
         'http://127.0.0.1:3000',
         'https://mastrochris.it',
-        'https://pizzeria-backend-dryv.onrender.com'
+        'https://www.mastrochris.it',
+        /\.vercel\.app$/
     ],
     methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
     credentials: true
@@ -46,7 +47,8 @@ app.use(helmet({
                 "http://127.0.0.1:3000",
                 "http://localhost:3000",
                 "https://mastrochris.it",
-                "https://pizzeria-backend-dryv.onrender.com"
+                "https://www.mastrochris.it",
+                "https://*.vercel.app"
             ]
         }
     }
@@ -73,7 +75,7 @@ app.use((req, res, next) => {
 
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 100,
+    max: 200,
     standardHeaders: true,
     legacyHeaders: false,
     message: "Troppe richieste, riprova piu tardi."
@@ -154,9 +156,6 @@ app.patch('/api/inventory/:data', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ========================================================
-// LA ROTTA MODIFICATA PER GESTIRE L'AGGIORNAMENTO COMPLETO
-// ========================================================
 app.patch('/api/ordini/:id/modifica', async (req, res) => {
     try {
         const Order = require('./models/Order');
@@ -191,7 +190,6 @@ app.patch('/api/ordini/:id/modifica', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
-// ========================================================
 
 app.get('/api/ingredienti-esauriti', async (req, res) => {
     try {
@@ -271,13 +269,16 @@ app.use('/api/ordini', orderRoutes);
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/pizzeria_db';
 
 mongoose.connect(MONGO_URI)
-.then(async () => {
+.then(() => {
     console.log("Forno acceso: MongoDB Connesso!");
-    await seedPizze(); 
 }).catch(err => console.error("Errore DB:", err));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`\n SERVER RUNNING ON PORT ${PORT}`);
-    console.log(`HUB STAFF: http://localhost:${PORT}/hub-staff.html\n`);
-});
+if (process.env.NODE_ENV !== 'production') {
+    app.listen(PORT, () => {
+        console.log(`\n SERVER RUNNING ON PORT ${PORT}`);
+        console.log(`HUB STAFF: http://localhost:${PORT}/hub-staff.html\n`);
+    });
+}
+
+module.exports = app;
