@@ -6,12 +6,13 @@ const User = require('../models/User');
 
 router.post('/register', async (req, res) => {
     try {
-	console.log("📩 REGISTER BODY:", req.body);
+        console.log("📩 REGISTER BODY:", req.body);
         const { email, password, role, nome, cognome } = req.body;
-	if (!email || !password) {
-    return res.status(400).json({ message: "Email o password mancanti" });
-}
         
+        if (!email || !password) {
+            return res.status(400).json({ message: "Email o password mancanti" });
+        }
+
         const existingUser = await User.findOne({ email });
         if (existingUser) return res.status(400).json({ message: "Email gia in uso" });
 
@@ -24,9 +25,9 @@ router.post('/register', async (req, res) => {
             nome, 
             cognome
         });
-        
+
         await newUser.save();
-        
+
         let message = "Registrazione completata!";
         if (newUser.role !== 'cliente') {
             message = "Registrazione effettuata. Il tuo account staff e in attesa di approvazione.";
@@ -41,7 +42,7 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body;
-        
+
         const user = await User.findOne({ email });
         if (!user) return res.status(404).json({ message: "Utente non trovato" });
 
@@ -59,7 +60,7 @@ router.post('/login', async (req, res) => {
 
         const ruolo = user.role.toLowerCase().trim();
         let durataSessione = '2h';
-        
+
         if (['pizzaiolo', 'staff', 'gestore', 'rider'].includes(ruolo)) {
             durataSessione = '24h';
         }
@@ -79,7 +80,7 @@ router.post('/login', async (req, res) => {
         };
 
         console.log(`LOGIN EFFETTUATO: ${user.email} [${user.role}] - Sessione: ${durataSessione}`);
-        
+
         res.status(200).json(rispostaModificata);
 
     } catch (error) {
