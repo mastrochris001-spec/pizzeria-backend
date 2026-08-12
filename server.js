@@ -22,6 +22,13 @@ const orderRoutes = require('./routes/orderRoutes');
 const app = express();
 app.set('trust proxy', 1);
 
+// --- AGGIUNTO: Logger per tracciare le richieste nei Log di Vercel ---
+app.use((req, res, next) => {
+    console.log(`[VERCEL LOG] ${req.method} ${req.url}`);
+    next();
+});
+// ------------------------------------------------------------------
+
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/pizzeria_db';
 let isConnected = false;
 
@@ -30,8 +37,9 @@ const connectDB = async () => {
     try {
         const db = await mongoose.connect(MONGO_URI);
         isConnected = db.connections[0].readyState === 1;
+        console.log("[DB] Connesso a MongoDB");
     } catch (err) {
-        console.error("Errore connessione MongoDB:", err);
+        console.error("[DB] Errore connessione MongoDB:", err);
     }
 };
 
@@ -46,7 +54,8 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-app.options(/(.*)/, cors());
+// Gestione esplicita delle richieste OPTIONS (Preflight CORS)
+app.options('*', cors()); 
 
 app.use(helmet({
     contentSecurityPolicy: false
@@ -66,8 +75,8 @@ app.use((req, res, next) => {
             }
         }
     };
-    sanitize(req.body);
-    sanitize(req.params);
+    if (req.body) sanitize(req.body);
+    if (req.params) sanitize(req.params);
     next();
 });
 
@@ -79,11 +88,6 @@ const limiter = rateLimit({
     message: "Troppe richieste, riprova piu tardi."
 });
 app.use('/api/', limiter);
-
-// File statici commentati: Vercel gestisce solo le API, il frontend è su Hostinger
-// app.use(express.static('frontend')); 
-// app.use('/immagini', express.static(path.join(__dirname, 'immagini')));
-// app.use('/immagini', express.static(path.join(__dirname, 'frontend', 'immagini')));
 
 app.get('/', (req, res) => {
     res.status(200).send("Backend Pizzeria Sole Online!");
@@ -215,7 +219,6 @@ app.delete('/api/ingredienti-esauriti/:nome', async (req, res) => {
     } catch(e) { res.status(500).json({error: e.message}); }
 });
 
-// --- MODIFICA VERCEL: Stato Locale salvato nel Database ---
 const settingsSchema = new mongoose.Schema({
     isLocaleAperto: { type: Boolean, default: true }
 });
@@ -242,7 +245,6 @@ app.patch('/api/impostazioni/stato-locale', async (req, res) => {
         res.status(500).json({ error: "Errore cambio stato locale" });
     }
 });
-// ---------------------------------------------------------
 
 app.get('/api/ordini/storico-personale', async (req, res) => {
     try {
