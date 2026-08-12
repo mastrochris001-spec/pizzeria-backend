@@ -80,9 +80,9 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-app.use(express.static('frontend')); 
-app.use('/immagini', express.static(path.join(__dirname, 'immagini')));
-app.use('/immagini', express.static(path.join(__dirname, 'frontend', 'immagini')));
+//app.use(express.static('frontend')); 
+//app.use('/immagini', express.static(path.join(__dirname, 'immagini')));
+//app.use('/immagini', express.static(path.join(__dirname, 'frontend', 'immagini')));
 
 app.get('/', (req, res) => {
     res.status(200).send("Backend Pizzeria Sole Online!");
