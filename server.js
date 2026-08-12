@@ -22,7 +22,6 @@ const orderRoutes = require('./routes/orderRoutes');
 const app = express();
 app.set('trust proxy', 1);
 
-// Gestione Connessione Serverless MongoDB
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/pizzeria_db';
 let isConnected = false;
 
@@ -46,6 +45,8 @@ app.use(cors({
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
+app.options('*', cors());
 
 app.use(helmet({
     contentSecurityPolicy: false
