@@ -80,9 +80,10 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-//app.use(express.static('frontend')); 
-//app.use('/immagini', express.static(path.join(__dirname, 'immagini')));
-//app.use('/immagini', express.static(path.join(__dirname, 'frontend', 'immagini')));
+// File statici commentati: Vercel gestisce solo le API, il frontend è su Hostinger
+// app.use(express.static('frontend')); 
+// app.use('/immagini', express.static(path.join(__dirname, 'immagini')));
+// app.use('/immagini', express.static(path.join(__dirname, 'frontend', 'immagini')));
 
 app.get('/', (req, res) => {
     res.status(200).send("Backend Pizzeria Sole Online!");
@@ -214,23 +215,34 @@ app.delete('/api/ingredienti-esauriti/:nome', async (req, res) => {
     } catch(e) { res.status(500).json({error: e.message}); }
 });
 
-let statoLocaleAperto = true;
+// --- MODIFICA VERCEL: Stato Locale salvato nel Database ---
+const settingsSchema = new mongoose.Schema({
+    isLocaleAperto: { type: Boolean, default: true }
+});
+const Settings = mongoose.models.Settings || mongoose.model('Settings', settingsSchema);
 
-app.get('/api/impostazioni/stato-locale', (req, res) => {
-    res.status(200).json({ aperto: statoLocaleAperto });
+app.get('/api/impostazioni/stato-locale', async (req, res) => {
+    try {
+        let settings = await Settings.findOne();
+        if (!settings) settings = await Settings.create({ isLocaleAperto: true });
+        res.status(200).json({ aperto: settings.isLocaleAperto });
+    } catch (e) {
+        res.status(500).json({ error: "Errore DB stato locale" });
+    }
 });
 
-app.patch('/api/impostazioni/stato-locale', (req, res) => {
+app.patch('/api/impostazioni/stato-locale', async (req, res) => {
     try {
         const { aperto } = req.body;
         if (aperto !== undefined) {
-            statoLocaleAperto = aperto;
+            await Settings.findOneAndUpdate({}, { isLocaleAperto: aperto }, { upsert: true, new: true });
         }
-        res.status(200).json({ success: true, aperto: statoLocaleAperto });
+        res.status(200).json({ success: true, aperto: aperto });
     } catch (e) {
         res.status(500).json({ error: "Errore cambio stato locale" });
     }
 });
+// ---------------------------------------------------------
 
 app.get('/api/ordini/storico-personale', async (req, res) => {
     try {
