@@ -54,9 +54,6 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// Gestione esplicita delle richieste OPTIONS (Preflight CORS)
-app.options('*', cors()); 
-
 app.use(helmet({
     contentSecurityPolicy: false
 }));
