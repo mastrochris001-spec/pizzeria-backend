@@ -22,46 +22,54 @@ const orderRoutes = require('./routes/orderRoutes');
 const app = express();
 app.set('trust proxy', 1);
 
-// --- AGGIUNTO: Logger per tracciare le richieste nei Log di Vercel ---
+// --- Logger: traccia le richieste nei Log di Vercel ---
 app.use((req, res, next) => {
     console.log(`[VERCEL LOG] ${req.method} ${req.url}`);
     next();
 });
-// ------------------------------------------------------------------
 
+// --- Connessione MongoDB (ottimizzata per Vercel/serverless) ---
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/pizzeria_db';
 let isConnected = false;
 
 const connectDB = async () => {
-    if (isConnected && mongoose.connection.readyState === 1) {
-        console.log("[DB] Già connesso a MongoDB");
-        return;
-    }
+    if (isConnected && mongoose.connection.readyState === 1) return;
     try {
-        console.log("[DB] Tentativo di connessione a MongoDB...");
         const db = await mongoose.connect(MONGO_URI, {
-            serverSelectionTimeoutMS: 5000, // Timeout per la selezione del server (5 secondi)
-            socketTimeoutMS: 45000, // Timeout per le operazioni socket (45 secondi)
-            connectTimeoutMS: 10000, // Timeout per la connessione iniziale (10 secondi)
+            serverSelectionTimeoutMS: 5000,
+            socketTimeoutMS: 45000,
+            connectTimeoutMS: 10000
         });
         isConnected = db.connections[0].readyState === 1;
-        console.log("[DB] ✅ Connesso a MongoDB con successo");
+        console.log("[DB] Connesso a MongoDB");
     } catch (err) {
-        console.error("[DB] ❌ Errore connessione MongoDB:", err.message);
-        throw err; // Rilancia l'errore invece di ignorarlo
+        console.error("[DB] Errore connessione MongoDB:", err.message);
+        throw err;
     }
 };
 
-app.use(async (req, res, next) => {
-    await connectDB();
-    next();
-});
-
+// --- 1) CORS PRIMA di tutto (così anche gli errori hanno gli header giusti) ---
 app.use(cors({
     origin: '*',
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
+// --- 2) Risposta immediata alle richieste OPTIONS (preflight) senza toccare il DB ---
+app.use((req, res, next) => {
+    if (req.method === 'OPTIONS') return res.sendStatus(204);
+    next();
+});
+
+// --- 3) POI la connessione al database ---
+app.use(async (req, res, next) => {
+    try {
+        await connectDB();
+        next();
+    } catch (err) {
+        res.status(500).json({ error: "Errore connessione al database: " + err.message });
+    }
+});
 
 app.use(helmet({
     contentSecurityPolicy: false
@@ -69,6 +77,7 @@ app.use(helmet({
 
 app.use(express.json());
 
+// --- Sanitizzazione input (sicurezza) ---
 app.use((req, res, next) => {
     const sanitize = (obj) => {
         if (obj instanceof Object) {
@@ -86,6 +95,7 @@ app.use((req, res, next) => {
     next();
 });
 
+// --- Rate limiter ---
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 200,
@@ -95,10 +105,16 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
+// File statici disattivati: il frontend è su Hostinger, Vercel gestisce solo le API
+// app.use(express.static('frontend')); 
+// app.use('/immagini', express.static(path.join(__dirname, 'immagini')));
+// app.use('/immagini', express.static(path.join(__dirname, 'frontend', 'immagini')));
+
 app.get('/', (req, res) => {
     res.status(200).send("Backend Pizzeria Sole Online!");
 });
 
+// --- Swagger (documentazione API) ---
 const swaggerOptions = {
     swaggerDefinition: {
         openapi: '3.0.0',
@@ -114,6 +130,7 @@ const swaggerOptions = {
 const swaggerDocs = swaggerJsDoc(swaggerOptions);
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 
+// --- Rotte Riders ---
 app.get('/api/riders/logistica', async (req, res) => {
     try {
         const riders = await User.find({ role: 'rider' }).select('nome cognome email isOnline _id');
@@ -141,6 +158,7 @@ app.get('/api/riders', async (req, res) => {
     }
 });
 
+// --- Rotte Inventory ---
 app.get('/api/inventory/:data', async (req, res) => {
     try {
         let inv = await Inventory.findOne({ data: req.params.data });
@@ -169,6 +187,7 @@ app.patch('/api/inventory/:data', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// --- Modifica ordine ---
 app.patch('/api/ordini/:id/modifica', async (req, res) => {
     try {
         const Order = require('./models/Order');
@@ -204,6 +223,7 @@ app.patch('/api/ordini/:id/modifica', async (req, res) => {
     }
 });
 
+// --- Rotte Ingredienti Esauriti ---
 app.get('/api/ingredienti-esauriti', async (req, res) => {
     try {
         const list = await IngredienteEsaurito.find();
@@ -225,6 +245,7 @@ app.delete('/api/ingredienti-esauriti/:nome', async (req, res) => {
     } catch(e) { res.status(500).json({error: e.message}); }
 });
 
+// --- Stato Locale salvato nel Database (compatibile con Vercel serverless) ---
 const settingsSchema = new mongoose.Schema({
     isLocaleAperto: { type: Boolean, default: true }
 });
@@ -252,6 +273,7 @@ app.patch('/api/impostazioni/stato-locale', async (req, res) => {
     }
 });
 
+// --- Storico ordini personale (con JWT) ---
 app.get('/api/ordini/storico-personale', async (req, res) => {
     try {
         const jwt = require('jsonwebtoken');
@@ -275,6 +297,7 @@ app.get('/api/ordini/storico-personale', async (req, res) => {
     }
 });
 
+// --- Forza inserimento pizze (seed) ---
 app.get('/api/forza-inserimento', async (req, res) => {
     try {
         await seedPizze();
@@ -284,10 +307,18 @@ app.get('/api/forza-inserimento', async (req, res) => {
     }
 });
 
+// --- Rotte principali ---
 app.use('/api/auth', authRoutes); 
 app.use('/api/pizze', pizzaRoutes);
 app.use('/api/ordini', orderRoutes);
 
+// --- Gestore errori globale (restituisce JSON invece di HTML) ---
+app.use((err, req, res, next) => {
+    console.error("[ERRORE GENERALE]", err.message);
+    res.status(500).json({ error: err.message });
+});
+
+// --- Avvio server (solo in locale, su Vercel non serve) ---
 const PORT = process.env.PORT || 3000;
 if (process.env.NODE_ENV !== 'production') {
     app.listen(PORT, () => {
