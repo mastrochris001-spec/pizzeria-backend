@@ -13,7 +13,7 @@ const User = require('./models/User');
 const Inventory = require('./models/Inventory'); 
 
 const esauritiSchema = new mongoose.Schema({ nome: { type: String, required: true, unique: true } });
-const IngredienteEsaurito = mongoose.model('IngredienteEsaurito', esauritiSchema);
+const IngredienteEsaurito = mongoose.models.IngredienteEsaurito || mongoose.model('IngredienteEsaurito', esauritiSchema);
 
 const authRoutes = require('./routes/authRoutes');
 const pizzaRoutes = require('./routes/pizzaRoutes');
@@ -22,36 +22,33 @@ const orderRoutes = require('./routes/orderRoutes');
 const app = express();
 app.set('trust proxy', 1);
 
+// Gestione Connessione Serverless MongoDB
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/pizzeria_db';
+let isConnected = false;
+
+const connectDB = async () => {
+    if (isConnected && mongoose.connection.readyState === 1) return;
+    try {
+        const db = await mongoose.connect(MONGO_URI);
+        isConnected = db.connections[0].readyState === 1;
+    } catch (err) {
+        console.error("Errore connessione MongoDB:", err);
+    }
+};
+
+app.use(async (req, res, next) => {
+    await connectDB();
+    next();
+});
+
 app.use(cors({
-    origin: [
-        'http://localhost:3000',
-        'http://127.0.0.1:3000',
-        'https://mastrochris.it',
-        'https://www.mastrochris.it',
-        /\.vercel\.app$/
-    ],
-    methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
-    credentials: true
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 app.use(helmet({
-    contentSecurityPolicy: {
-        directives: {
-            defaultSrc: ["'self'"],
-            scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
-            styleSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://fonts.googleapis.com"],
-            fontSrc: ["'self'", "https://fonts.gstatic.com"],
-            imgSrc: ["'self'", "data:", "https://cdn-icons-png.flaticon.com", "https://nominatim.openstreetmap.org"],
-            connectSrc: [
-                "'self'",
-                "http://127.0.0.1:3000",
-                "http://localhost:3000",
-                "https://mastrochris.it",
-                "https://www.mastrochris.it",
-                "https://*.vercel.app"
-            ]
-        }
-    }
+    contentSecurityPolicy: false
 }));
 
 app.use(express.json());
@@ -85,6 +82,10 @@ app.use('/api/', limiter);
 app.use(express.static('frontend')); 
 app.use('/immagini', express.static(path.join(__dirname, 'immagini')));
 app.use('/immagini', express.static(path.join(__dirname, 'frontend', 'immagini')));
+
+app.get('/', (req, res) => {
+    res.status(200).send("Backend Pizzeria Sole Online!");
+});
 
 const swaggerOptions = {
     swaggerDefinition: {
@@ -265,13 +266,6 @@ app.get('/api/forza-inserimento', async (req, res) => {
 app.use('/api/auth', authRoutes); 
 app.use('/api/pizze', pizzaRoutes);
 app.use('/api/ordini', orderRoutes);
-
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/pizzeria_db';
-
-mongoose.connect(MONGO_URI)
-.then(() => {
-    console.log("Forno acceso: MongoDB Connesso!");
-}).catch(err => console.error("Errore DB:", err));
 
 const PORT = process.env.PORT || 3000;
 if (process.env.NODE_ENV !== 'production') {
