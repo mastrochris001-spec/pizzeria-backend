@@ -33,13 +33,22 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/pizzeria_d
 let isConnected = false;
 
 const connectDB = async () => {
-    if (isConnected && mongoose.connection.readyState === 1) return;
+    if (isConnected && mongoose.connection.readyState === 1) {
+        console.log("[DB] Già connesso a MongoDB");
+        return;
+    }
     try {
-        const db = await mongoose.connect(MONGO_URI);
+        console.log("[DB] Tentativo di connessione a MongoDB...");
+        const db = await mongoose.connect(MONGO_URI, {
+            serverSelectionTimeoutMS: 5000, // Timeout per la selezione del server (5 secondi)
+            socketTimeoutMS: 45000, // Timeout per le operazioni socket (45 secondi)
+            connectTimeoutMS: 10000, // Timeout per la connessione iniziale (10 secondi)
+        });
         isConnected = db.connections[0].readyState === 1;
-        console.log("[DB] Connesso a MongoDB");
+        console.log("[DB] ✅ Connesso a MongoDB con successo");
     } catch (err) {
-        console.error("[DB] Errore connessione MongoDB:", err);
+        console.error("[DB] ❌ Errore connessione MongoDB:", err.message);
+        throw err; // Rilancia l'errore invece di ignorarlo
     }
 };
 
