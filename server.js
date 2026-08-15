@@ -326,18 +326,4 @@ if (process.env.NODE_ENV !== 'production') {
         console.log(`HUB STAFF: http://localhost:${PORT}/hub-staff.html\n`);
     });
 }
-// --- Ricerca clienti registrati (per lo staff) ---
-app.get('/api/clienti/ricerca', async (req, res) => {
-    try {
-        const q = req.query.q || '';
-        if (q.length < 2) return res.json([]);
-        const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-        const clienti = await User.find({ $or: [{ nome: regex }, { telefono: regex }] })
-            .select('nome telefono email')
-            .limit(10);
-        res.json(clienti);
-    } catch (e) {
-        res.status(500).json([]);
-    }
-});
 module.exports = app;
