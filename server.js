@@ -12,6 +12,14 @@ const seedPizze = require('./seed');
 const User = require('./models/User'); 
 const Inventory = require('./models/Inventory'); 
 
+// --- MODELLO IMPOSTAZIONI SLOT ---
+const settingsSlotSchema = new mongoose.Schema({
+    durataSlot: { type: Number, default: 15 },
+    limiteForno: { type: Number, default: 18 },
+    slotDisabilitati: { type: [String], default: [] }
+});
+const SettingsSlot = mongoose.models.SettingsSlot || mongoose.model('SettingsSlot', settingsSlotSchema);
+
 const esauritiSchema = new mongoose.Schema({ nome: { type: String, required: true, unique: true } });
 const IngredienteEsaurito = mongoose.models.IngredienteEsaurito || mongoose.model('IngredienteEsaurito', esauritiSchema);
 
@@ -273,6 +281,30 @@ app.patch('/api/impostazioni/stato-locale', async (req, res) => {
     }
 });
 
+// --- ROTTE IMPOSTAZIONI SLOT (NUOVE) ---
+app.get('/api/impostazioni/slot', async (req, res) => {
+    try {
+        let settings = await SettingsSlot.findOne();
+        if (!settings) { settings = await SettingsSlot.create({}); }
+        res.json(settings);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.patch('/api/impostazioni/slot', async (req, res) => {
+    try {
+        const { durataSlot, limiteForno, slotDisabilitati } = req.body;
+        let settings = await SettingsSlot.findOne();
+        if (!settings) { settings = await SettingsSlot.create({}); }
+        
+        if (durataSlot !== undefined) settings.durataSlot = durataSlot;
+        if (limiteForno !== undefined) settings.limiteForno = limiteForno;
+        if (slotDisabilitati !== undefined) settings.slotDisabilitati = slotDisabilitati;
+        
+        await settings.save();
+        res.json(settings);
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // --- Storico ordini personale (con JWT) ---
 app.get('/api/ordini/storico-personale', async (req, res) => {
     try {
@@ -326,4 +358,5 @@ if (process.env.NODE_ENV !== 'production') {
         console.log(`HUB STAFF: http://localhost:${PORT}/hub-staff.html\n`);
     });
 }
+
 module.exports = app;
