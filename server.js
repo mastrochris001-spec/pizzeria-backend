@@ -16,6 +16,7 @@ const Inventory = require('./models/Inventory');
 const settingsSlotSchema = new mongoose.Schema({
     durataSlot: { type: Number, default: 15 },
     limiteForno: { type: Number, default: 18 },
+    consegnePerRider: { type: Number, default: 1 },
     slotDisabilitati: { type: [String], default: [] }
 });
 const SettingsSlot = mongoose.models.SettingsSlot || mongoose.model('SettingsSlot', settingsSlotSchema);
