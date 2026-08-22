@@ -10,6 +10,7 @@ const Pizza = require('../models/Pizza');
 const settingsSlotSchema = new mongoose.Schema({
     durataSlot: { type: Number, default: 15 },
     limiteForno: { type: Number, default: 18 },
+    consegnePerRider: { type: Number, default: 1 },
     slotDisabilitati: { type: [String], default: [] }
 });
 const SettingsSlot = mongoose.models.SettingsSlot || mongoose.model('SettingsSlot', settingsSlotSchema);
@@ -105,8 +106,8 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ error: "Dati ordine incompleti" });
         }
 
-        // --- Legge limite forno e slot disabilitati dal database ---
-                let LIMITE = 18;
+        // --- Legge limite forno, consegne per rider e slot disabilitati dal database ---
+        let LIMITE = 18;
         let consegnePerRider = 1;
         let slotDisabilitati = [];
         try {
@@ -116,9 +117,6 @@ router.post('/', async (req, res) => {
                 consegnePerRider = parseInt(imp.consegnePerRider) || 1;
                 slotDisabilitati = Array.isArray(imp.slotDisabilitati) ? imp.slotDisabilitati : [];
             }
-        } catch (e) {
-            console.error("Errore lettura impostazioni slot:", e.message);
-        }
         } catch (e) {
             console.error("Errore lettura impostazioni slot:", e.message);
         }
@@ -153,7 +151,7 @@ router.post('/', async (req, res) => {
             const ridersOnline = await User.find({ role: 'rider', isOnline: true });
             const consegneQuestoOrario = ordiniEsistenti.filter(o => o.tipoOrdine === 'consegna').length;
 
-            if (consegneQuestoOrario >= (ridersOnline.length * 3)) {
+            if (consegneQuestoOrario >= (ridersOnline.length * consegnePerRider)) {
                 return res.status(400).json({ 
                     message: `Tutti i rider sono occupati per le ${orario}. Scegli l'Asporto o cambia orario.` 
                 });
