@@ -106,14 +106,19 @@ router.post('/', async (req, res) => {
         }
 
         // --- Legge limite forno e slot disabilitati dal database ---
-        let LIMITE = 18;
+                let LIMITE = 18;
+        let consegnePerRider = 1;
         let slotDisabilitati = [];
         try {
             const imp = await SettingsSlot.findOne();
             if (imp) {
                 LIMITE = parseInt(imp.limiteForno) || 18;
+                consegnePerRider = parseInt(imp.consegnePerRider) || 1;
                 slotDisabilitati = Array.isArray(imp.slotDisabilitati) ? imp.slotDisabilitati : [];
             }
+        } catch (e) {
+            console.error("Errore lettura impostazioni slot:", e.message);
+        }
         } catch (e) {
             console.error("Errore lettura impostazioni slot:", e.message);
         }
