@@ -1,7 +1,16 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const Order = require('../models/Order');
 const User = require('../models/User'); 
+
+// --- MODELLO IMPOSTAZIONI SLOT (condiviso con server.js) ---
+const settingsSlotSchema = new mongoose.Schema({
+    durataSlot: { type: Number, default: 15 },
+    limiteForno: { type: Number, default: 18 },
+    slotDisabilitati: { type: [String], default: [] }
+});
+const SettingsSlot = mongoose.models.SettingsSlot || mongoose.model('SettingsSlot', settingsSlotSchema);
 
 router.get('/disponibilita', async (req, res) => {
     try {
@@ -43,6 +52,26 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ error: "Dati ordine incompleti" });
         }
 
+        // --- NUOVO: legge limite forno e slot disabilitati dal database ---
+        let LIMITE = 18;
+        let slotDisabilitati = [];
+        try {
+            const imp = await SettingsSlot.findOne();
+            if (imp) {
+                LIMITE = parseInt(imp.limiteForno) || 18;
+                slotDisabilitati = Array.isArray(imp.slotDisabilitati) ? imp.slotDisabilitati : [];
+            }
+        } catch (e) {
+            console.error("Errore lettura impostazioni slot:", e.message);
+        }
+
+        // Blocca lato server gli slot spenti dallo staff
+        if (slotDisabilitati.includes(orario)) {
+            return res.status(400).json({ 
+                message: `Lo slot delle ${orario} non e' piu' disponibile. Scegli un altro orario.` 
+            });
+        }
+
         const oggi = new Date();
         oggi.setHours(0, 0, 0, 0);
 
@@ -54,11 +83,10 @@ router.post('/', async (req, res) => {
 
         let occupati = 0;
         ordiniEsistenti.forEach(o => occupati += (o.caricoSlot || 0));
-        const LIMITE = 18;
         
         if (occupati + caricoSlot > LIMITE) {
             return res.status(400).json({ 
-                message: `Lo slot delle ${orario} e pieno. Posti rimasti: ${LIMITE - occupati}` 
+                message: `Lo slot delle ${orario} e pieno. Posti rimasti: ${Math.max(0, LIMITE - occupati)}` 
             });
         }
 
