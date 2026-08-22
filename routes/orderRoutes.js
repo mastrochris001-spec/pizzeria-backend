@@ -2,7 +2,9 @@ const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
 const Order = require('../models/Order');
-const User = require('../models/User'); 
+const User = require('../models/User');
+const Inventory = require('../models/Inventory');
+const Pizza = require('../models/Pizza');
 
 // --- MODELLO IMPOSTAZIONI SLOT (condiviso con server.js) ---
 const settingsSlotSchema = new mongoose.Schema({
@@ -11,6 +13,57 @@ const settingsSlotSchema = new mongoose.Schema({
     slotDisabilitati: { type: [String], default: [] }
 });
 const SettingsSlot = mongoose.models.SettingsSlot || mongoose.model('SettingsSlot', settingsSlotSchema);
+
+// --- UTILITY SCORTE ---
+function chiaveDataOggi() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+const getPezziEsatti = (testo) => {
+    if (/\b12\b/.test(testo)) return 12;
+    if (/\b6\b/.test(testo)) return 6;
+    if (/\b2\b/.test(testo)) return 2;
+    return 1;
+};
+
+// Calcola quante scorte limitate consuma un ordine (stessa logica del menu)
+async function calcolaConsumoScorte(pizze) {
+    const consumo = { integrale: 0, glutenFree: 0, cannoli: 0, arancini: 0 };
+    if (!Array.isArray(pizze)) return consumo;
+    for (const p of pizze) {
+        let nomePizza = '';
+        try {
+            const idPizza = p.pizza && p.pizza._id ? p.pizza._id : p.pizza;
+            const pz = await Pizza.findById(idPizza);
+            if (pz) nomePizza = pz.nome || '';
+        } catch (e) {}
+        const qta = p.quantita || 1;
+        const testo = (String(p.note || '') + ' ' + nomePizza).toLowerCase();
+        if (testo.includes('integrale')) consumo.integrale += qta;
+        if (testo.includes('gluten')) consumo.glutenFree += qta;
+        if (testo.includes('cannol')) consumo.cannoli += qta * getPezziEsatti(testo);
+        if (testo.includes('arancin')) consumo.arancini += qta * getPezziEsatti(testo);
+    }
+    return consumo;
+}
+
+// segno = -1 scala le scorte, +1 le ripristina
+async function aggiornaScorte(consumo, segno) {
+    try {
+        if (!consumo.integrale && !consumo.glutenFree && !consumo.cannoli && !consumo.arancini) return;
+        const inv = await Inventory.findOne({ data: chiaveDataOggi() });
+        if (!inv) return;
+        inv.integrale = Math.max(0, (inv.integrale || 0) + segno * consumo.integrale);
+        inv.glutenFree = Math.max(0, (inv.glutenFree || 0) + segno * consumo.glutenFree);
+        inv.cannoli = Math.max(0, (inv.cannoli || 0) + segno * consumo.cannoli);
+        inv.arancini = Math.max(0, (inv.arancini || 0) + segno * consumo.arancini);
+        await inv.save();
+        console.log(`[SCORTE] ${segno < 0 ? 'Scalate' : 'Ripristinate'}:`, consumo);
+    } catch (e) {
+        console.error("Errore aggiornamento scorte:", e.message);
+    }
+}
 
 router.get('/disponibilita', async (req, res) => {
     try {
@@ -52,7 +105,7 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ error: "Dati ordine incompleti" });
         }
 
-        // --- NUOVO: legge limite forno e slot disabilitati dal database ---
+        // --- Legge limite forno e slot disabilitati dal database ---
         let LIMITE = 18;
         let slotDisabilitati = [];
         try {
@@ -65,7 +118,6 @@ router.post('/', async (req, res) => {
             console.error("Errore lettura impostazioni slot:", e.message);
         }
 
-        // Blocca lato server gli slot spenti dallo staff
         if (slotDisabilitati.includes(orario)) {
             return res.status(400).json({ 
                 message: `Lo slot delle ${orario} non e' piu' disponibile. Scegli un altro orario.` 
@@ -123,6 +175,10 @@ router.post('/', async (req, res) => {
       
         const nuovoOrdine = new Order(datiNuovoOrdine);
         const ordineSalvato = await nuovoOrdine.save();
+
+        // --- NUOVO: scala automaticamente le scorte limitate (integrali, gluten, cannoli, arancini) ---
+        const consumo = await calcolaConsumoScorte(pizze);
+        await aggiornaScorte(consumo, -1);
         
         res.status(201).json(ordineSalvato);
         
@@ -223,6 +279,11 @@ router.delete('/:id', async (req, res) => {
     try {
         const deleted = await Order.findByIdAndDelete(req.params.id);
         if (!deleted) return res.status(404).json({ message: "Ordine non trovato" });
+
+        // --- NUOVO: ripristina le scorte se l'ordine viene eliminato ---
+        const consumo = await calcolaConsumoScorte(deleted.pizze);
+        await aggiornaScorte(consumo, +1);
+
         res.status(200).json({ message: "Ordine eliminato" });
     } catch (err) {
         res.status(500).json({ message: "Errore eliminazione" });
