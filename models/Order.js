@@ -65,10 +65,7 @@ const OrderSchema = new mongoose.Schema({
     },
 
     
-    pagato: {
-        type: Boolean,
-        default: false
-    },
+    pagato: { type: Boolean, default: false }
 
     indirizzoConsegna: {
         type: String,
