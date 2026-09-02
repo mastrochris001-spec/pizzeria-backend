@@ -6,7 +6,17 @@ const User = require('../models/User');
 const Inventory = require('../models/Inventory');
 const Pizza = require('../models/Pizza');
 
-// --- MODELLO IMPOSTAZIONI SLOT (condiviso con server.js) ---
+// --- MODELLO RUBRICA CLIENTI (telefonici, senza account) ---
+const rubricaSchema = new mongoose.Schema({
+    nome: String,
+    telefono: { type: String, index: true },
+    indirizzo: { type: String, default: '' },
+    citofono: { type: String, default: '' },
+    ultimaOrdinazione: { type: Date, default: Date.now }
+}, { timestamps: true });
+const RubricaCliente = mongoose.models.RubricaCliente || mongoose.model('RubricaCliente', rubricaSchema);
+
+// --- MODELLO IMPOSTAZIONI SLOT ---
 const settingsSlotSchema = new mongoose.Schema({
     durataSlot: { type: Number, default: 15 },
     limiteForno: { type: Number, default: 18 },
@@ -28,7 +38,6 @@ const getPezziEsatti = (testo) => {
     return 1;
 };
 
-// Calcola quante scorte limitate consuma un ordine (stessa logica del menu)
 async function calcolaConsumoScorte(pizze) {
     const consumo = { integrale: 0, glutenFree: 0, cannoli: 0, arancini: 0 };
     if (!Array.isArray(pizze)) return consumo;
@@ -49,7 +58,6 @@ async function calcolaConsumoScorte(pizze) {
     return consumo;
 }
 
-// segno = -1 scala le scorte, +1 le ripristina
 async function aggiornaScorte(consumo, segno) {
     try {
         if (!consumo.integrale && !consumo.glutenFree && !consumo.cannoli && !consumo.arancini) return;
@@ -106,20 +114,16 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ error: "Dati ordine incompleti" });
         }
 
-        // --- Legge limite forno, consegne per rider e slot disabilitati dal database ---
+        // --- Legge limite forno, consegne rider e slot disabilitati dal database ---
         let LIMITE = 18;
-        let consegnePerRider = 1;
         let slotDisabilitati = [];
         try {
             const imp = await SettingsSlot.findOne();
             if (imp) {
                 LIMITE = parseInt(imp.limiteForno) || 18;
-                consegnePerRider = parseInt(imp.consegnePerRider) || 1;
                 slotDisabilitati = Array.isArray(imp.slotDisabilitati) ? imp.slotDisabilitati : [];
             }
-        } catch (e) {
-            console.error("Errore lettura impostazioni slot:", e.message);
-        }
+        } catch (e) {}
 
         if (slotDisabilitati.includes(orario)) {
             return res.status(400).json({ 
@@ -151,7 +155,7 @@ router.post('/', async (req, res) => {
             const ridersOnline = await User.find({ role: 'rider', isOnline: true });
             const consegneQuestoOrario = ordiniEsistenti.filter(o => o.tipoOrdine === 'consegna').length;
 
-            if (consegneQuestoOrario >= (ridersOnline.length * consegnePerRider)) {
+            if (consegneQuestoOrario >= (ridersOnline.length * 3)) {
                 return res.status(400).json({ 
                     message: `Tutti i rider sono occupati per le ${orario}. Scegli l'Asporto o cambia orario.` 
                 });
@@ -179,12 +183,56 @@ router.post('/', async (req, res) => {
         const nuovoOrdine = new Order(datiNuovoOrdine);
         const ordineSalvato = await nuovoOrdine.save();
 
-        // --- NUOVO: scala automaticamente le scorte limitate (integrali, gluten, cannoli, arancini) ---
+        // --- RUBRICA: salva automaticamente i dati del cliente (anche senza account) ---
+        try {
+            const telRub = String(req.body.telefonoCliente || '').trim();
+            const nomeRub = String(req.body.nomeClienteCustom || '').trim();
+            if (telRub && nomeRub) {
+                const datiRubrica = {
+                    nome: nomeRub,
+                    telefono: telRub,
+                    ultimaOrdinazione: new Date()
+                };
+                if (req.body.indirizzoConsegna && req.body.indirizzoConsegna !== 'Asporto') {
+                    datiRubrica.indirizzo = req.body.indirizzoConsegna;
+                }
+                if (req.body.citofono) datiRubrica.citofono = req.body.citofono;
+                await RubricaCliente.findOneAndUpdate({ telefono: telRub }, datiRubrica, { upsert: true });
+            }
+        } catch (e) {
+            console.error("Errore salvataggio rubrica:", e.message);
+        }
+
+        // --- SCORTE: scala automaticamente le scorte limitate ---
         const consumo = await calcolaConsumoScorte(pizze);
         await aggiornaScorte(consumo, -1);
         
         res.status(201).json(ordineSalvato);
         
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
+// --- PRONTO PER STAZIONE (forno / compositore) ---
+router.patch('/:id/stazione', async (req, res) => {
+    try {
+        const { stazione, pronto } = req.body;
+        const ordine = await Order.findById(req.params.id);
+        if (!ordine) return res.status(404).json({ error: "Ordine non trovato" });
+
+        if (stazione === 'forno') ordine.prontoForno = !!pronto;
+        else if (stazione === 'compositore') ordine.prontoCompositore = !!pronto;
+        else return res.status(400).json({ error: "Stazione non valida" });
+
+        if (ordine.prontoForno && ordine.prontoCompositore) {
+            ordine.stato = 'pronto';
+        } else if (ordine.stato === 'pronto') {
+            ordine.stato = 'in preparazione';
+        }
+
+        await ordine.save();
+        res.json(ordine);
     } catch (error) {
         res.status(400).json({ error: error.message });
     }
@@ -242,6 +290,10 @@ router.patch('/:id/stato', async (req, res) => {
         
         if (stato !== undefined) updateData.stato = stato;
         if (pagato !== undefined) updateData.pagato = pagato;
+        if (stato === 'in attesa' || stato === 'in preparazione') {
+            updateData.prontoForno = false;
+            updateData.prontoCompositore = false;
+        }
 
         const ordineAggiornato = await Order.findByIdAndUpdate(
             req.params.id,
@@ -283,13 +335,26 @@ router.delete('/:id', async (req, res) => {
         const deleted = await Order.findByIdAndDelete(req.params.id);
         if (!deleted) return res.status(404).json({ message: "Ordine non trovato" });
 
-        // --- NUOVO: ripristina le scorte se l'ordine viene eliminato ---
+        // --- Ripristina le scorte se l'ordine viene eliminato ---
         const consumo = await calcolaConsumoScorte(deleted.pizze);
         await aggiornaScorte(consumo, +1);
 
         res.status(200).json({ message: "Ordine eliminato" });
     } catch (err) {
         res.status(500).json({ message: "Errore eliminazione" });
+    }
+});
+
+// --- FIX UNA-TANTUM: rimette pagato=false sugli ordini attivi in contanti ---
+router.get('/fix-pagato', async (req, res) => {
+    try {
+        const r = await Order.updateMany(
+            { stato: { $in: ['in attesa', 'in preparazione', 'pronto', 'in consegna'] }, metodoPagamento: 'contanti' },
+            { $set: { pagato: false } }
+        );
+        res.json({ modificati: r.modifiedCount });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
     }
 });
 
