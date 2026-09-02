@@ -21,6 +21,16 @@ const settingsSlotSchema = new mongoose.Schema({
 });
 const SettingsSlot = mongoose.models.SettingsSlot || mongoose.model('SettingsSlot', settingsSlotSchema);
 
+// --- MODELLO RUBRICA CLIENTI ---
+const rubricaSchema = new mongoose.Schema({
+    nome: String,
+    telefono: { type: String, index: true },
+    indirizzo: { type: String, default: '' },
+    citofono: { type: String, default: '' },
+    ultimaOrdinazione: { type: Date, default: Date.now }
+}, { timestamps: true });
+const RubricaCliente = mongoose.models.RubricaCliente || mongoose.model('RubricaCliente', rubricaSchema);
+
 const esauritiSchema = new mongoose.Schema({ nome: { type: String, required: true, unique: true } });
 const IngredienteEsaurito = mongoose.models.IngredienteEsaurito || mongoose.model('IngredienteEsaurito', esauritiSchema);
 
@@ -31,13 +41,13 @@ const orderRoutes = require('./routes/orderRoutes');
 const app = express();
 app.set('trust proxy', 1);
 
-// --- Logger: traccia le richieste nei Log di Vercel ---
+// --- Logger ---
 app.use((req, res, next) => {
     console.log(`[VERCEL LOG] ${req.method} ${req.url}`);
     next();
 });
 
-// --- Connessione MongoDB (ottimizzata per Vercel/serverless) ---
+// --- Connessione MongoDB ---
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/pizzeria_db';
 let isConnected = false;
 
@@ -57,20 +67,20 @@ const connectDB = async () => {
     }
 };
 
-// --- 1) CORS PRIMA di tutto (così anche gli errori hanno gli header giusti) ---
+// --- CORS ---
 app.use(cors({
     origin: '*',
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// --- 2) Risposta immediata alle richieste OPTIONS (preflight) senza toccare il DB ---
+// --- OPTIONS immediato ---
 app.use((req, res, next) => {
     if (req.method === 'OPTIONS') return res.sendStatus(204);
     next();
 });
 
-// --- 3) POI la connessione al database ---
+// --- Connessione DB ---
 app.use(async (req, res, next) => {
     try {
         await connectDB();
@@ -86,7 +96,7 @@ app.use(helmet({
 
 app.use(express.json());
 
-// --- Sanitizzazione input (sicurezza) ---
+// --- Sanitizzazione input ---
 app.use((req, res, next) => {
     const sanitize = (obj) => {
         if (obj instanceof Object) {
@@ -104,26 +114,21 @@ app.use((req, res, next) => {
     next();
 });
 
-// --- Rate limiter ---
+// --- Rate limiter (alzato: i pannelli staff fanno polling continuo) ---
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 20000,
+    max: 2000,
     standardHeaders: true,
     legacyHeaders: false,
     message: "Troppe richieste, riprova piu tardi."
 });
 app.use('/api/', limiter);
 
-// File statici disattivati: il frontend è su Hostinger, Vercel gestisce solo le API
-// app.use(express.static('frontend')); 
-// app.use('/immagini', express.static(path.join(__dirname, 'immagini')));
-// app.use('/immagini', express.static(path.join(__dirname, 'frontend', 'immagini')));
-
 app.get('/', (req, res) => {
     res.status(200).send("Backend Pizzeria Sole Online!");
 });
 
-// --- Swagger (documentazione API) ---
+// --- Swagger ---
 const swaggerOptions = {
     swaggerDefinition: {
         openapi: '3.0.0',
@@ -254,7 +259,7 @@ app.delete('/api/ingredienti-esauriti/:nome', async (req, res) => {
     } catch(e) { res.status(500).json({error: e.message}); }
 });
 
-// --- Stato Locale salvato nel Database (compatibile con Vercel serverless) ---
+// --- Stato Locale ---
 const settingsSchema = new mongoose.Schema({
     isLocaleAperto: { type: Boolean, default: true }
 });
@@ -282,7 +287,7 @@ app.patch('/api/impostazioni/stato-locale', async (req, res) => {
     }
 });
 
-// --- ROTTE IMPOSTAZIONI SLOT (NUOVE) ---
+// --- Rotte Impostazioni Slot ---
 app.get('/api/impostazioni/slot', async (req, res) => {
     try {
         let settings = await SettingsSlot.findOne();
@@ -293,12 +298,13 @@ app.get('/api/impostazioni/slot', async (req, res) => {
 
 app.patch('/api/impostazioni/slot', async (req, res) => {
     try {
-        const { durataSlot, limiteForno, slotDisabilitati } = req.body;
+        const { durataSlot, limiteForno, consegnePerRider, slotDisabilitati } = req.body;
         let settings = await SettingsSlot.findOne();
         if (!settings) { settings = await SettingsSlot.create({}); }
         
         if (durataSlot !== undefined) settings.durataSlot = durataSlot;
         if (limiteForno !== undefined) settings.limiteForno = limiteForno;
+        if (consegnePerRider !== undefined) settings.consegnePerRider = consegnePerRider;
         if (slotDisabilitati !== undefined) settings.slotDisabilitati = slotDisabilitati;
         
         await settings.save();
@@ -306,7 +312,43 @@ app.patch('/api/impostazioni/slot', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- Storico ordini personale (con JWT) ---
+// --- Ricerca clienti (registrati + rubrica) ---
+app.get('/api/clienti/ricerca', async (req, res) => {
+    try {
+        const jwt = require('jsonwebtoken');
+        const authHeader = req.headers.authorization;
+        if (!authHeader) return res.status(401).json([]);
+        jwt.verify(authHeader.split(' ')[1], process.env.JWT_SECRET || 'chiave_temporanea');
+
+        const q = (req.query.q || '').trim();
+        if (q.length < 2) return res.json([]);
+        const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+
+        const registrati = await User.find({
+            $or: [{ nome: regex }, { telefono: regex }, { email: regex }]
+        }).select('nome telefono email').limit(8);
+
+        const rubrica = await RubricaCliente.find({
+            $or: [{ nome: regex }, { telefono: regex }]
+        }).sort({ updatedAt: -1 }).limit(8);
+
+        const risultati = [
+            ...registrati.map(u => ({
+                nome: u.nome || '', telefono: u.telefono || '',
+                indirizzo: '', citofono: '', tipo: 'registrato'
+            })),
+            ...rubrica.map(r => ({
+                nome: r.nome || '', telefono: r.telefono || '',
+                indirizzo: r.indirizzo || '', citofono: r.citofono || '', tipo: 'rubrica'
+            }))
+        ];
+        res.json(risultati);
+    } catch (e) {
+        res.status(401).json([]);
+    }
+});
+
+// --- Storico ordini personale ---
 app.get('/api/ordini/storico-personale', async (req, res) => {
     try {
         const jwt = require('jsonwebtoken');
@@ -330,7 +372,7 @@ app.get('/api/ordini/storico-personale', async (req, res) => {
     }
 });
 
-// --- Forza inserimento pizze (seed) ---
+// --- Forza inserimento pizze ---
 app.get('/api/forza-inserimento', async (req, res) => {
     try {
         await seedPizze();
@@ -345,13 +387,13 @@ app.use('/api/auth', authRoutes);
 app.use('/api/pizze', pizzaRoutes);
 app.use('/api/ordini', orderRoutes);
 
-// --- Gestore errori globale (restituisce JSON invece di HTML) ---
+// --- Gestore errori globale ---
 app.use((err, req, res, next) => {
     console.error("[ERRORE GENERALE]", err.message);
     res.status(500).json({ error: err.message });
 });
 
-// --- Avvio server (solo in locale, su Vercel non serve) ---
+// --- Avvio server locale ---
 const PORT = process.env.PORT || 3000;
 if (process.env.NODE_ENV !== 'production') {
     app.listen(PORT, () => {
@@ -359,5 +401,4 @@ if (process.env.NODE_ENV !== 'production') {
         console.log(`HUB STAFF: http://localhost:${PORT}/hub-staff.html\n`);
     });
 }
-
 module.exports = app;
