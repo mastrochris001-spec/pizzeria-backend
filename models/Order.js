@@ -67,8 +67,10 @@ const OrderSchema = new mongoose.Schema({
         default: 'contanti'
     },
 
-    // ✅ VIRGOLA AGGIUNTA + default false (i rider vedono gli importi da incassare)
     pagato: { type: Boolean, default: false },
+
+    prontoForno: { type: Boolean, default: false },
+    prontoCompositore: { type: Boolean, default: false },
 
     indirizzoConsegna: {
         type: String,
