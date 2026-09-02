@@ -7,12 +7,10 @@ const OrderSchema = new mongoose.Schema({
         required: true 
     },
 
-    
     nomeClienteCustom: { 
         type: String, 
         default: "" 
     },
-    
     
     telefonoCliente: {
         type: String,
@@ -42,6 +40,11 @@ const OrderSchema = new mongoose.Schema({
         required: true 
     },
 
+    puntiGuadagnati: {
+        type: Number,
+        default: 0
+    },
+
     tipoOrdine: {
         type: String,
         enum: ['tavolo', 'asporto', 'consegna'],
@@ -64,15 +67,24 @@ const OrderSchema = new mongoose.Schema({
         default: 'contanti'
     },
 
-    
-    pagato: { type: Boolean, default: false }
+    // ✅ VIRGOLA AGGIUNTA + default false (i rider vedono gli importi da incassare)
+    pagato: { type: Boolean, default: false },
 
     indirizzoConsegna: {
         type: String,
         default: ""
     },
 
-    
+    citofono: {
+        type: String,
+        default: ""
+    },
+
+    noteConsegna: {
+        type: String,
+        default: ""
+    },
+
     riderAssegnato: { 
         type: mongoose.Schema.Types.ObjectId, 
         ref: 'User',
@@ -81,7 +93,7 @@ const OrderSchema = new mongoose.Schema({
     
     stato: { 
         type: String, 
-        enum: ['in attesa', 'in preparazione', 'pronto', 'in consegna', 'consegnato'], 
+        enum: ['in attesa', 'in preparazione', 'pronto', 'in consegna', 'consegnato', 'eliminato'], 
         default: 'in attesa' 
     },
     
