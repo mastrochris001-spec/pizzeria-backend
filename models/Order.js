@@ -72,6 +72,12 @@ const OrderSchema = new mongoose.Schema({
     prontoForno: { type: Boolean, default: false },
     prontoCompositore: { type: Boolean, default: false },
 
+    // --- NUOVO: giorno di consegna/ritiro (YYYY-MM-DD) per ordini futuri ---
+    dataConsegna: {
+        type: String,
+        default: ''
+    },
+
     indirizzoConsegna: {
         type: String,
         default: ""
