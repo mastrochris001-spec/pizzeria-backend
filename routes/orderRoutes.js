@@ -158,6 +158,7 @@ router.post('/', async (req, res) => {
         }
 
         const datiNuovoOrdine = { ...req.body };
+        datiNuovoOrdine.dataConsegna = dataOrdine;
 
         if (tipoOrdine === 'consegna') {
             const ridersOnline = await User.find({ role: 'rider', isOnline: true });
