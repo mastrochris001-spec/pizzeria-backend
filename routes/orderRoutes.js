@@ -69,14 +69,34 @@ router.get('/disponibilita', async (req, res) => {
         const { orario } = req.query;
         if (!orario) return res.status(400).json({ error: "Orario mancante" });
 
-        const oggi = new Date();
+                const oggi = new Date();
         oggi.setHours(0, 0, 0, 0);
+        const oggiFine = new Date();
+        oggiFine.setHours(23, 59, 59, 999);
 
-        const ordiniSlot = await Order.find({
-            orario: orario,
-            createdAt: { $gte: oggi },
-            stato: { $ne: 'eliminato' }
-        });
+        // --- DATA ORDINE: oggi oppure un giorno futuro scelto nel checkout ---
+        const dataOrdine = req.body.dataConsegna || chiaveDataOggi();
+
+        let ordiniEsistenti;
+        if (dataOrdine === chiaveDataOggi()) {
+            ordiniEsistenti = await Order.find({
+                orario: orario,
+                stato: { $ne: 'eliminato' },
+                $or: [
+                    { dataConsegna: dataOrdine },
+                    { $and: [
+                        { $or: [ { dataConsegna: { $exists: false } }, { dataConsegna: '' }, { dataConsegna: null } ] },
+                        { createdAt: { $gte: oggi, $lte: oggiFine } }
+                    ]}
+                ]
+            });
+        } else {
+            ordiniEsistenti = await Order.find({
+                orario: orario,
+                dataConsegna: dataOrdine,
+                stato: { $ne: 'eliminato' }
+            });
+        }
 
         let totaleCarico = 0;
         ordiniSlot.forEach(o => totaleCarico += (o.caricoSlot || 0));
