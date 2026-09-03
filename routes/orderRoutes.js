@@ -5,8 +5,6 @@ const Order = require('../models/Order');
 const User = require('../models/User');
 const Inventory = require('../models/Inventory');
 const Pizza = require('../models/Pizza');
-
-// --- MODELLO RUBRICA CLIENTI (telefonici, senza account) ---
 const rubricaSchema = new mongoose.Schema({
     nome: String,
     telefono: { type: String, index: true },
@@ -15,8 +13,6 @@ const rubricaSchema = new mongoose.Schema({
     ultimaOrdinazione: { type: Date, default: Date.now }
 }, { timestamps: true });
 const RubricaCliente = mongoose.models.RubricaCliente || mongoose.model('RubricaCliente', rubricaSchema);
-
-// --- MODELLO IMPOSTAZIONI SLOT ---
 const settingsSlotSchema = new mongoose.Schema({
     durataSlot: { type: Number, default: 15 },
     limiteForno: { type: Number, default: 18 },
@@ -24,20 +20,16 @@ const settingsSlotSchema = new mongoose.Schema({
     slotDisabilitati: { type: [String], default: [] }
 });
 const SettingsSlot = mongoose.models.SettingsSlot || mongoose.model('SettingsSlot', settingsSlotSchema);
-
-// --- UTILITY SCORTE ---
 function chiaveDataOggi() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
-
 const getPezziEsatti = (testo) => {
     if (/\b12\b/.test(testo)) return 12;
     if (/\b6\b/.test(testo)) return 6;
     if (/\b2\b/.test(testo)) return 2;
     return 1;
 };
-
 async function calcolaConsumoScorte(pizze) {
     const consumo = { integrale: 0, glutenFree: 0, cannoli: 0, arancini: 0 };
     if (!Array.isArray(pizze)) return consumo;
@@ -57,7 +49,6 @@ async function calcolaConsumoScorte(pizze) {
     }
     return consumo;
 }
-
 async function aggiornaScorte(consumo, segno) {
     try {
         if (!consumo.integrale && !consumo.glutenFree && !consumo.cannoli && !consumo.arancini) return;
@@ -73,7 +64,6 @@ async function aggiornaScorte(consumo, segno) {
         console.error("Errore aggiornamento scorte:", e.message);
     }
 }
-
 router.get('/disponibilita', async (req, res) => {
     try {
         const { orario } = req.query;
@@ -113,8 +103,6 @@ router.post('/', async (req, res) => {
         if (!cliente || !pizze || !orario || !caricoSlot) {
             return res.status(400).json({ error: "Dati ordine incompleti" });
         }
-
-        // --- Legge limite forno, consegne rider e slot disabilitati dal database ---
         let LIMITE = 18;
         let slotDisabilitati = [];
         try {
@@ -182,8 +170,6 @@ router.post('/', async (req, res) => {
       
         const nuovoOrdine = new Order(datiNuovoOrdine);
         const ordineSalvato = await nuovoOrdine.save();
-
-        // --- RUBRICA: salva automaticamente i dati del cliente (anche senza account) ---
         try {
             const telRub = String(req.body.telefonoCliente || '').trim();
             const nomeRub = String(req.body.nomeClienteCustom || '').trim();
@@ -202,8 +188,6 @@ router.post('/', async (req, res) => {
         } catch (e) {
             console.error("Errore salvataggio rubrica:", e.message);
         }
-
-        // --- SCORTE: scala automaticamente le scorte limitate ---
         const consumo = await calcolaConsumoScorte(pizze);
         await aggiornaScorte(consumo, -1);
         
@@ -213,8 +197,6 @@ router.post('/', async (req, res) => {
         res.status(400).json({ error: error.message });
     }
 });
-
-// --- PRONTO PER STAZIONE (forno / compositore) ---
 router.patch('/:id/stazione', async (req, res) => {
     try {
         const { stazione, pronto } = req.body;
@@ -282,8 +264,6 @@ router.get('/', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
-
-// --- 🔧 FIX CRITICO: ora accetta anche metodoPagamento ---
 router.patch('/:id/stato', async (req, res) => {
     try {
         const { stato, pagato, metodoPagamento } = req.body;
@@ -338,7 +318,6 @@ router.delete('/:id', async (req, res) => {
         const deleted = await Order.findByIdAndDelete(req.params.id);
         if (!deleted) return res.status(404).json({ message: "Ordine non trovato" });
 
-        // --- Ripristina le scorte se l'ordine viene eliminato ---
         const consumo = await calcolaConsumoScorte(deleted.pizze);
         await aggiornaScorte(consumo, +1);
 
@@ -347,8 +326,6 @@ router.delete('/:id', async (req, res) => {
         res.status(500).json({ message: "Errore eliminazione" });
     }
 });
-
-// --- FIX UNA-TANTUM: rimette pagato=false sugli ordini attivi in contanti ---
 router.get('/fix-pagato', async (req, res) => {
     try {
         const r = await Order.updateMany(
