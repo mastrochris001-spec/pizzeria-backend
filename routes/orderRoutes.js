@@ -244,25 +244,30 @@ router.patch('/:id/stazione', async (req, res) => {
 router.get('/attivi', async (req, res) => {
     try {
         const { data } = req.query;
-        let dataInizio = new Date();
-        dataInizio.setHours(0, 0, 0, 0);
-        let dataFine = new Date();
-        dataFine.setHours(23, 59, 59, 999);
+        const d = data || chiaveDataOggi();
+        const oggiStart = new Date(); oggiStart.setHours(0,0,0,0);
+        const oggiEnd = new Date(); oggiEnd.setHours(23,59,59,999);
 
-        if (data) {
-            dataInizio = new Date(data);
-            dataInizio.setHours(0, 0, 0, 0);
-            dataFine = new Date(data);
-            dataFine.setHours(23, 59, 59, 999);
+        let dateCondition;
+        if (d === chiaveDataOggi()) {
+            dateCondition = { $or: [
+                { dataConsegna: d },
+                { $and: [
+                    { $or: [ { dataConsegna: { $exists: false } }, { dataConsegna: '' }, { dataConsegna: null } ] },
+                    { createdAt: { $gte: oggiStart, $lte: oggiEnd } }
+                ]}
+            ]};
+        } else {
+            dateCondition = { dataConsegna: d };
         }
 
         const ordini = await Order.find({
-            createdAt: { $gte: dataInizio, $lte: dataFine },
-            stato: { $in: ['in attesa', 'in preparazione', 'pronto', 'in consegna', 'consegnato'] } 
+            ...dateCondition,
+            stato: { $in: ['in attesa', 'in preparazione', 'pronto', 'in consegna', 'consegnato'] }
         })
         .populate({ path: 'pizze.pizza', model: 'Pizza' })
         .populate('cliente', 'nome email')
-        .sort({ orario: 1 }); 
+        .sort({ orario: 1 });
 
         res.status(200).json(ordini);
     } catch (error) {
