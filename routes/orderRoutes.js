@@ -283,13 +283,16 @@ router.get('/', async (req, res) => {
     }
 });
 
+// --- 🔧 FIX CRITICO: ora accetta anche metodoPagamento ---
 router.patch('/:id/stato', async (req, res) => {
     try {
-        const { stato, pagato } = req.body;
+        const { stato, pagato, metodoPagamento } = req.body;
         const updateData = {};
         
         if (stato !== undefined) updateData.stato = stato;
         if (pagato !== undefined) updateData.pagato = pagato;
+        if (metodoPagamento !== undefined) updateData.metodoPagamento = metodoPagamento;
+        
         if (stato === 'in attesa' || stato === 'in preparazione') {
             updateData.prontoForno = false;
             updateData.prontoCompositore = false;
