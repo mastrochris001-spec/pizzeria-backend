@@ -16,15 +16,15 @@ const userSchema = new mongoose.Schema({
         type: Boolean, 
         default: false 
     },
-
  
-isApprovato: {
-    type: Boolean,
-    default: true
-},
+    isApprovato: {
+        type: Boolean,
+        default: true
+    },
 
-    indirizzo: { type: String }, 
-    telefono: { type: String },
+    indirizzo: { type: String, default: '' }, 
+    citofono: { type: String, default: '' },
+    telefono: { type: String, default: '' },
     
     metodoPagamento: { 
         type: String, 
