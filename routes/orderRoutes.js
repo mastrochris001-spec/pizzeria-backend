@@ -176,6 +176,8 @@ router.post('/', async (req, res) => {
         }
         const nuovoOrdine = new Order(datiNuovoOrdine);
         const ordineSalvato = await nuovoOrdine.save();
+        
+        // --- SALVATAGGIO RUBRICA (tutti i clienti) ---
         try {
             const telRub = String(req.body.telefonoCliente || '').trim();
             const nomeRub = String(req.body.nomeClienteCustom || '').trim();
@@ -194,6 +196,30 @@ router.post('/', async (req, res) => {
         } catch (e) {
             console.error("Errore salvataggio rubrica:", e.message);
         }
+        
+        // --- AGGIORNA DATI UTENTE REGISTRATO (nome, telefono, indirizzo, citofono) ---
+        try {
+            const updateUserData = {};
+            if (req.body.nomeClienteCustom && req.body.nomeClienteCustom.trim()) {
+                updateUserData.nome = req.body.nomeClienteCustom.trim();
+            }
+            if (req.body.telefonoCliente && req.body.telefonoCliente.trim()) {
+                updateUserData.telefono = req.body.telefonoCliente.trim();
+            }
+            if (req.body.indirizzoConsegna && req.body.indirizzoConsegna !== 'Asporto') {
+                updateUserData.indirizzo = req.body.indirizzoConsegna;
+            }
+            if (req.body.citofono) {
+                updateUserData.citofono = req.body.citofono;
+            }
+            if (Object.keys(updateUserData).length > 0 && cliente) {
+                await User.findByIdAndUpdate(cliente, updateUserData);
+                console.log(`[USER] Dati aggiornati per utente: ${updateUserData.nome || cliente}`);
+            }
+        } catch (e) {
+            console.error("Errore aggiornamento User:", e.message);
+        }
+        
         const consumo = await calcolaConsumoScorte(pizze);
         await aggiornaScorte(consumo, -1);
         res.status(201).json(ordineSalvato);
