@@ -32,10 +32,7 @@ const OrderSchema = new mongoose.Schema({
     pagato: { type: Boolean, default: false },
     prontoForno: { type: Boolean, default: false },
     prontoCompositore: { type: Boolean, default: false },
-    
-    // --- DATA CONSEGNA (per ordini futuri) ---
     dataConsegna: { type: String, default: '' },
-    
     indirizzoConsegna: { type: String, default: "" },
     citofono: { type: String, default: "" },
     noteConsegna: { type: String, default: "" },
@@ -50,16 +47,6 @@ const OrderSchema = new mongoose.Schema({
         default: 'in attesa' 
     },
     createdAt: { type: Date, default: Date.now }
-});
-
-module.exports = mongoose.model('Order', OrderSchema);        enum: ['in attesa', 'in preparazione', 'pronto', 'in consegna', 'consegnato', 'eliminato'], 
-        default: 'in attesa' 
-    },
-    
-    createdAt: { 
-        type: Date, 
-        default: Date.now 
-    }
 });
 
 module.exports = mongoose.model('Order', OrderSchema);
