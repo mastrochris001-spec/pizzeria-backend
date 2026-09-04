@@ -50,40 +50,36 @@ app.use((req, res, next) => {
 // --- CONNESSIONE MONGODB CON CACHE (obbligatoria per Vercel serverless) ---
 const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/pizzeria_db';
 
-// Cache globale: evita che ogni cold start apra una connessione nuova
 let cached = global.mongoose;
 if (!cached) {
     cached = global.mongoose = { conn: null, promise: null };
 }
 
 async function connectDB() {
-    // Se c'è già una connessione attiva, RIUSALA (non aprirne una nuova)
     if (cached.conn && cached.conn.connection && cached.conn.connection.readyState === 1) {
         return cached.conn;
     }
-
     if (!cached.promise) {
         const opts = {
             bufferCommands: false,
             serverSelectionTimeoutMS: 5000,
             socketTimeoutMS: 15000,
             connectTimeoutMS: 10000,
-            maxPoolSize: 10,           // max 10 connessioni per istanza Vercel (invece di 100 default)
-            minPoolSize: 1,            // tiene almeno 1 connessione viva
-            maxIdleTimeMS: 30000,      // chiude le connessioni inutilizzate dopo 30 sec
+            maxPoolSize: 10,
+            minPoolSize: 1,
+            maxIdleTimeMS: 30000,
             tls: true,
-            tlsAllowInvalidCertificates: true,  // evita errori SSL su serverless
+            tlsAllowInvalidCertificates: true,
         };
         cached.promise = mongoose.connect(MONGO_URI, opts).then((m) => {
             console.log("[DB] Connesso a MongoDB");
             return m;
         });
     }
-
     try {
         cached.conn = await cached.promise;
     } catch (e) {
-        cached.promise = null; // permette di riprovare al prossimo tentativo
+        cached.promise = null;
         console.error("[DB] Errore connessione MongoDB:", e.message);
         throw e;
     }
@@ -243,13 +239,14 @@ app.patch('/api/inventory/:data', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- Modifica ordine ---
+// --- Modifica ordine (con aggiornamento User e rubrica) ---
 app.patch('/api/ordini/:id/modifica', async (req, res) => {
     try {
         const Order = require('./models/Order');
         const { 
             pizze, totale, tipoOrdine, indirizzoConsegna, 
-            metodoPagamento, orario, caricoSlot, noteConsegna, citofono
+            metodoPagamento, orario, caricoSlot, noteConsegna, citofono,
+            nomeClienteCustom, telefonoCliente
         } = req.body;
         
         const datiDaAggiornare = {};
@@ -262,6 +259,8 @@ app.patch('/api/ordini/:id/modifica', async (req, res) => {
         if (caricoSlot !== undefined) datiDaAggiornare.caricoSlot = caricoSlot;
         if (noteConsegna !== undefined) datiDaAggiornare.noteConsegna = noteConsegna;
         if (citofono !== undefined) datiDaAggiornare.citofono = citofono;
+        if (nomeClienteCustom) datiDaAggiornare.nomeClienteCustom = nomeClienteCustom;
+        if (telefonoCliente) datiDaAggiornare.telefonoCliente = telefonoCliente;
 
         const updatedOrder = await Order.findByIdAndUpdate(
             req.params.id, 
@@ -271,6 +270,42 @@ app.patch('/api/ordini/:id/modifica', async (req, res) => {
 
         if (!updatedOrder) {
             return res.status(404).json({ message: "Ordine non trovato" });
+        }
+
+        // --- AGGIORNA DATI UTENTE REGISTRATO ANCHE SU MODIFICA ORDINE ---
+        try {
+            if (updatedOrder && updatedOrder.cliente) {
+                const updateUserData = {};
+                if (nomeClienteCustom) updateUserData.nome = nomeClienteCustom;
+                if (telefonoCliente) updateUserData.telefono = telefonoCliente;
+                if (indirizzoConsegna && indirizzoConsegna !== 'Asporto') {
+                    updateUserData.indirizzo = indirizzoConsegna;
+                }
+                if (citofono) updateUserData.citofono = citofono;
+                
+                if (Object.keys(updateUserData).length > 0) {
+                    await User.findByIdAndUpdate(updatedOrder.cliente, updateUserData);
+                    console.log(`[USER] Dati aggiornati su modifica ordine per: ${updatedOrder.cliente}`);
+                }
+                
+                // Aggiorna anche la rubrica (utile per fast checkout staff)
+                const telRub = String(telefonoCliente || updatedOrder.telefonoCliente || '').trim();
+                const nomeRub = String(nomeClienteCustom || updatedOrder.nomeClienteCustom || '').trim();
+                if (telRub && nomeRub) {
+                    const datiRubrica = {
+                        nome: nomeRub,
+                        telefono: telRub,
+                        ultimaOrdinazione: new Date()
+                    };
+                    const indirizzoFinale = indirizzoConsegna !== undefined ? indirizzoConsegna : (updatedOrder.indirizzoConsegna || '');
+                    if (indirizzoFinale && indirizzoFinale !== 'Asporto') datiRubrica.indirizzo = indirizzoFinale;
+                    const citofonoFinale = citofono !== undefined ? citofono : updatedOrder.citofono;
+                    if (citofonoFinale) datiRubrica.citofono = citofonoFinale;
+                    await RubricaCliente.findOneAndUpdate({ telefono: telRub }, datiRubrica, { upsert: true });
+                }
+            }
+        } catch (e) {
+            console.error("Errore aggiornamento User su modifica ordine:", e.message);
         }
 
         res.json(updatedOrder);
@@ -368,7 +403,7 @@ app.get('/api/clienti/ricerca', async (req, res) => {
 
         const registrati = await User.find({
             $or: [{ nome: regex }, { telefono: regex }, { email: regex }]
-        }).select('nome telefono email indirizzo').limit(8);
+        }).select('nome telefono email indirizzo citofono').limit(8);
 
         const rubrica = await RubricaCliente.find({
             $or: [{ nome: regex }, { telefono: regex }]
@@ -376,19 +411,17 @@ app.get('/api/clienti/ricerca', async (req, res) => {
 
         const norm = t => String(t || '').replace(/\D/g, '');
 
-        // Arricchisci registrati con dati rubrica (citofono, indirizzo completo)
         const risultati = registrati.map(u => {
             const recRub = rubrica.find(r => norm(r.telefono) === norm(u.telefono) && norm(r.telefono) !== '');
             return {
                 nome: u.nome || '',
                 telefono: u.telefono || '',
                 indirizzo: (recRub && recRub.indirizzo) ? recRub.indirizzo : (u.indirizzo || ''),
-                citofono: (recRub && recRub.citofono) ? recRub.citofono : '',
+                citofono: (recRub && recRub.citofono) ? recRub.citofono : (u.citofono || ''),
                 tipo: 'registrato'
             };
         });
 
-        // Aggiungi clienti solo-rubrica (non duplicati)
         rubrica.forEach(r => {
             const dup = risultati.some(x => norm(x.telefono) === norm(r.telefono) && norm(r.telefono) !== '');
             if (!dup) {
@@ -459,5 +492,4 @@ if (process.env.NODE_ENV !== 'production') {
     });
 }
 
-// Export per Vercel
 module.exports = app;
