@@ -197,24 +197,32 @@ router.post('/', async (req, res) => {
             console.error("Errore salvataggio rubrica:", e.message);
         }
         
-        // --- AGGIORNA DATI UTENTE REGISTRATO (nome, telefono, indirizzo, citofono) ---
+        // --- AGGIORNA DATI SOLO PER CLIENTI (mai per staff/pizzaiolo/rider) ---
         try {
-            const updateUserData = {};
-            if (req.body.nomeClienteCustom && req.body.nomeClienteCustom.trim()) {
-                updateUserData.nome = req.body.nomeClienteCustom.trim();
-            }
-            if (req.body.telefonoCliente && req.body.telefonoCliente.trim()) {
-                updateUserData.telefono = req.body.telefonoCliente.trim();
-            }
-            if (req.body.indirizzoConsegna && req.body.indirizzoConsegna !== 'Asporto') {
-                updateUserData.indirizzo = req.body.indirizzoConsegna;
-            }
-            if (req.body.citofono) {
-                updateUserData.citofono = req.body.citofono;
-            }
-            if (Object.keys(updateUserData).length > 0 && cliente) {
-                await User.findByIdAndUpdate(cliente, updateUserData);
-                console.log(`[USER] Dati aggiornati per utente: ${updateUserData.nome || cliente}`);
+            if (cliente) {
+                const utenteRegistrato = await User.findById(cliente);
+                
+                if (utenteRegistrato && utenteRegistrato.role === 'cliente') {
+                    const updateUserData = {};
+                    if (req.body.nomeClienteCustom && req.body.nomeClienteCustom.trim()) {
+                        updateUserData.nome = req.body.nomeClienteCustom.trim();
+                    }
+                    if (req.body.telefonoCliente && req.body.telefonoCliente.trim()) {
+                        updateUserData.telefono = req.body.telefonoCliente.trim();
+                    }
+                    if (req.body.indirizzoConsegna && req.body.indirizzoConsegna !== 'Asporto') {
+                        updateUserData.indirizzo = req.body.indirizzoConsegna;
+                    }
+                    if (req.body.citofono) {
+                        updateUserData.citofono = req.body.citofono;
+                    }
+                    if (Object.keys(updateUserData).length > 0) {
+                        await User.findByIdAndUpdate(cliente, updateUserData);
+                        console.log(`[USER] Dati cliente aggiornati: ${updateUserData.nome}`);
+                    }
+                } else if (utenteRegistrato) {
+                    console.log(`[USER] Account ${utenteRegistrato.role}: profilo NON modificato (dati cliente solo in rubrica)`);
+                }
             }
         } catch (e) {
             console.error("Errore aggiornamento User:", e.message);
