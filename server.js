@@ -47,25 +47,48 @@ app.use((req, res, next) => {
     next();
 });
 
-// --- Connessione MongoDB ---
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/pizzeria_db';
-let isConnected = false;
+// --- CONNESSIONE MONGODB CON CACHE (obbligatoria per Vercel serverless) ---
+const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/pizzeria_db';
 
-const connectDB = async () => {
-    if (isConnected && mongoose.connection.readyState === 1) return;
-    try {
-        const db = await mongoose.connect(MONGO_URI, {
-            serverSelectionTimeoutMS: 5000,
-            socketTimeoutMS: 45000,
-            connectTimeoutMS: 10000
-        });
-        isConnected = db.connections[0].readyState === 1;
-        console.log("[DB] Connesso a MongoDB");
-    } catch (err) {
-        console.error("[DB] Errore connessione MongoDB:", err.message);
-        throw err;
+// Cache globale: evita che ogni cold start apra una connessione nuova
+let cached = global.mongoose;
+if (!cached) {
+    cached = global.mongoose = { conn: null, promise: null };
+}
+
+async function connectDB() {
+    // Se c'è già una connessione attiva, RIUSALA (non aprirne una nuova)
+    if (cached.conn && cached.conn.connection && cached.conn.connection.readyState === 1) {
+        return cached.conn;
     }
-};
+
+    if (!cached.promise) {
+        const opts = {
+            bufferCommands: false,
+            serverSelectionTimeoutMS: 5000,
+            socketTimeoutMS: 15000,
+            connectTimeoutMS: 10000,
+            maxPoolSize: 10,           // max 10 connessioni per istanza Vercel (invece di 100 default)
+            minPoolSize: 1,            // tiene almeno 1 connessione viva
+            maxIdleTimeMS: 30000,      // chiude le connessioni inutilizzate dopo 30 sec
+            tls: true,
+            tlsAllowInvalidCertificates: true,  // evita errori SSL su serverless
+        };
+        cached.promise = mongoose.connect(MONGO_URI, opts).then((m) => {
+            console.log("[DB] Connesso a MongoDB");
+            return m;
+        });
+    }
+
+    try {
+        cached.conn = await cached.promise;
+    } catch (e) {
+        cached.promise = null; // permette di riprovare al prossimo tentativo
+        console.error("[DB] Errore connessione MongoDB:", e.message);
+        throw e;
+    }
+    return cached.conn;
+}
 
 // --- CORS ---
 app.use(cors({
@@ -80,7 +103,7 @@ app.use((req, res, next) => {
     next();
 });
 
-// --- Connessione DB ---
+// --- Middleware: connetti al DB per ogni richiesta (con cache) ---
 app.use(async (req, res, next) => {
     try {
         await connectDB();
@@ -94,7 +117,7 @@ app.use(helmet({
     contentSecurityPolicy: false
 }));
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // --- Sanitizzazione input ---
 app.use((req, res, next) => {
@@ -114,7 +137,7 @@ app.use((req, res, next) => {
     next();
 });
 
-// --- Rate limiter (alzato: i pannelli staff fanno polling continuo) ---
+// --- Rate limiter ---
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 2000,
@@ -126,6 +149,21 @@ app.use('/api/', limiter);
 
 app.get('/', (req, res) => {
     res.status(200).send("Backend Pizzeria Sole Online!");
+});
+
+// --- Endpoint ping per test connessione ---
+app.get('/api/ping', async (req, res) => {
+    try {
+        const state = mongoose.connection.readyState;
+        const states = { 0: 'disconnected', 1: 'connected', 2: 'connecting', 3: 'disconnecting' };
+        res.json({ 
+            ok: state === 1, 
+            dbState: states[state] || 'unknown',
+            time: new Date()
+        });
+    } catch (e) {
+        res.status(500).json({ ok: false, error: e.message });
+    }
 });
 
 // --- Swagger ---
@@ -141,8 +179,12 @@ const swaggerOptions = {
     },
     apis: ['./routes/*.js'],
 };
-const swaggerDocs = swaggerJsDoc(swaggerOptions);
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
+try {
+    const swaggerDocs = swaggerJsDoc(swaggerOptions);
+    app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs));
+} catch (e) {
+    console.log("Swagger non disponibile:", e.message);
+}
 
 // --- Rotte Riders ---
 app.get('/api/riders/logistica', async (req, res) => {
@@ -326,22 +368,37 @@ app.get('/api/clienti/ricerca', async (req, res) => {
 
         const registrati = await User.find({
             $or: [{ nome: regex }, { telefono: regex }, { email: regex }]
-        }).select('nome telefono email').limit(8);
+        }).select('nome telefono email indirizzo').limit(8);
 
         const rubrica = await RubricaCliente.find({
             $or: [{ nome: regex }, { telefono: regex }]
         }).sort({ updatedAt: -1 }).limit(8);
 
-        const risultati = [
-            ...registrati.map(u => ({
-                nome: u.nome || '', telefono: u.telefono || '',
-                indirizzo: '', citofono: '', tipo: 'registrato'
-            })),
-            ...rubrica.map(r => ({
-                nome: r.nome || '', telefono: r.telefono || '',
-                indirizzo: r.indirizzo || '', citofono: r.citofono || '', tipo: 'rubrica'
-            }))
-        ];
+        const norm = t => String(t || '').replace(/\D/g, '');
+
+        // Arricchisci registrati con dati rubrica (citofono, indirizzo completo)
+        const risultati = registrati.map(u => {
+            const recRub = rubrica.find(r => norm(r.telefono) === norm(u.telefono) && norm(r.telefono) !== '');
+            return {
+                nome: u.nome || '',
+                telefono: u.telefono || '',
+                indirizzo: (recRub && recRub.indirizzo) ? recRub.indirizzo : (u.indirizzo || ''),
+                citofono: (recRub && recRub.citofono) ? recRub.citofono : '',
+                tipo: 'registrato'
+            };
+        });
+
+        // Aggiungi clienti solo-rubrica (non duplicati)
+        rubrica.forEach(r => {
+            const dup = risultati.some(x => norm(x.telefono) === norm(r.telefono) && norm(r.telefono) !== '');
+            if (!dup) {
+                risultati.push({
+                    nome: r.nome || '', telefono: r.telefono || '',
+                    indirizzo: r.indirizzo || '', citofono: r.citofono || '', tipo: 'rubrica'
+                });
+            }
+        });
+
         res.json(risultati);
     } catch (e) {
         res.status(401).json([]);
@@ -393,7 +450,7 @@ app.use((err, req, res, next) => {
     res.status(500).json({ error: err.message });
 });
 
-// --- Avvio server locale ---
+// --- Avvio server locale (solo in dev) ---
 const PORT = process.env.PORT || 3000;
 if (process.env.NODE_ENV !== 'production') {
     app.listen(PORT, () => {
@@ -401,4 +458,6 @@ if (process.env.NODE_ENV !== 'production') {
         console.log(`HUB STAFF: http://localhost:${PORT}/hub-staff.html\n`);
     });
 }
+
+// Export per Vercel
 module.exports = app;
