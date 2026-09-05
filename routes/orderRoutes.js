@@ -330,16 +330,21 @@ router.patch('/:id/stato', async (req, res) => {
 router.patch('/:id/assegna', async (req, res) => {
     try {
         const { riderId } = req.body;
-        const updated = await Order.findByIdAndUpdate(
-            req.params.id,
-            {
-                riderAssegnato: riderId,
-                stato: riderId ? 'in consegna' : 'pronto'
-            },
-            { new: true }
-        );
-        if (!updated) return res.status(404).json({ error: "Ordine non trovato" });
-        res.status(200).json(updated);
+        const ordine = await Order.findById(req.params.id);
+        if (!ordine) return res.status(404).json({ error: "Ordine non trovato" });
+
+        // Cambia SOLO il rider assegnato
+        ordine.riderAssegnato = riderId || null;
+
+        // Aggiorna lo stato SOLO se l'ordine è già pronto (non toccare le comande in lavorazione)
+        const statiGiaPronti = ['pronto', 'in consegna', 'consegnato'];
+        if (statiGiaPronti.includes(ordine.stato)) {
+            ordine.stato = riderId ? 'in consegna' : 'pronto';
+        }
+        // Se è ancora 'in attesa' o 'in preparazione', lo stato resta invariato
+
+        await ordine.save();
+        res.status(200).json(ordine);
     } catch (err) {
         res.status(500).json({ error: "Errore assegnazione rider" });
     }
