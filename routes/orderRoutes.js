@@ -40,6 +40,8 @@ async function calcolaConsumoScorte(pizze) {
     const consumo = { integrale: 0, glutenFree: 0, cannoli: 0, arancini: 0 };
     if (!Array.isArray(pizze)) return consumo;
     for (const p of pizze) {
+        // Salta i prodotti premio gratis (non consumano scorte)
+        if (p.premioGratis) continue;
         let nomePizza = '';
         try {
             const idPizza = p.pizza && p.pizza._id ? p.pizza._id : p.pizza;
@@ -176,7 +178,7 @@ router.post('/', async (req, res) => {
             datiNuovoOrdine.riderAssegnato = riderSelezionato;
         }
         
-        // --- GESTIONE PREMIO RISCATTATO (se presente nel checkout) ---
+        // --- GESTIONE PREMIO RISCATTATO ---
         let puntiDaScalare = 0;
         let puntiGuadagnati = Math.floor(parseFloat(req.body.totale) || 0);
         
@@ -192,6 +194,21 @@ router.post('/', async (req, res) => {
                         datiNuovoOrdine.premioRiscattato = reward._id;
                         datiNuovoOrdine.premioNome = reward.nome;
                         datiNuovoOrdine.puntiUsati = reward.puntiRichiesti;
+                        
+                        // Aggiunge il prodotto collegato al premio come voce GRATIS nell'ordine
+                        if (reward.prodottoId) {
+                            if (!Array.isArray(datiNuovoOrdine.pizze)) datiNuovoOrdine.pizze = [];
+                            datiNuovoOrdine.pizze.push({
+                                pizza: reward.prodottoId,
+                                quantita: 1,
+                                note: '🎁 PREMIO FEDELTÀ - GRATIS',
+                                premioGratis: true
+                            });
+                            // Incrementa il carico forno di 1 (il prodotto gratis occupa comunque uno slot)
+                            datiNuovoOrdine.caricoSlot = (datiNuovoOrdine.caricoSlot || 0) + 1;
+                            console.log(`[PREMIO] Aggiunto prodotto gratis: ${reward.prodottoId}`);
+                        }
+                        
                         console.log(`[PREMIO] ${utenteCheck.nome} riscatta "${reward.nome}" (${reward.puntiRichiesti} punti)`);
                     } else {
                         return res.status(400).json({ 
@@ -212,7 +229,7 @@ router.post('/', async (req, res) => {
         const nuovoOrdine = new Order(datiNuovoOrdine);
         const ordineSalvato = await nuovoOrdine.save();
         
-        // --- AGGIORNA PUNTI UTENTE: scala riscatto + aggiungi guadagnati ---
+        // --- AGGIORNA PUNTI UTENTE ---
         try {
             const utente = await User.findById(cliente);
             if (utente && utente.role === 'cliente') {
@@ -225,7 +242,7 @@ router.post('/', async (req, res) => {
             console.error("Errore aggiornamento punti:", e.message);
         }
         
-        // --- SALVATAGGIO RUBRICA (tutti i clienti) ---
+        // --- SALVATAGGIO RUBRICA ---
         try {
             const telRub = String(req.body.telefonoCliente || '').trim();
             const nomeRub = String(req.body.nomeClienteCustom || '').trim();
@@ -245,7 +262,7 @@ router.post('/', async (req, res) => {
             console.error("Errore salvataggio rubrica:", e.message);
         }
         
-        // --- AGGIORNA DATI SOLO PER CLIENTI (mai per staff/pizzaiolo/rider) ---
+        // --- AGGIORNA DATI CLIENTE ---
         try {
             if (cliente) {
                 const utenteRegistrato = await User.findById(cliente);
@@ -269,13 +286,14 @@ router.post('/', async (req, res) => {
                         console.log(`[USER] Dati cliente aggiornati: ${updateUserData.nome}`);
                     }
                 } else if (utenteRegistrato) {
-                    console.log(`[USER] Account ${utenteRegistrato.role}: profilo NON modificato (dati cliente solo in rubrica)`);
+                    console.log(`[USER] Account ${utenteRegistrato.role}: profilo NON modificato`);
                 }
             }
         } catch (e) {
             console.error("Errore aggiornamento User:", e.message);
         }
         
+        // Consumo scorte calcolato solo sulle pizze originali (esclude prodotti premio gratis)
         const consumo = await calcolaConsumoScorte(pizze);
         await aggiornaScorte(consumo, -1);
         res.status(201).json(ordineSalvato);
@@ -343,7 +361,7 @@ router.get('/', async (req, res) => {
                 path: 'pizze.pizza',
                 select: 'nome categoria prezzo'
             })
-            .populate('premioRiscattato', 'nome puntiRichiesti tipo')
+            .populate('premioRiscattato', 'nome puntiRichiesti tipo categoria')
             .sort({ createdAt: -1 });
         res.status(200).json(ordini);
     } catch (error) {
@@ -382,15 +400,12 @@ router.patch('/:id/assegna', async (req, res) => {
         const ordine = await Order.findById(req.params.id);
         if (!ordine) return res.status(404).json({ error: "Ordine non trovato" });
 
-        // Cambia SOLO il rider assegnato
         ordine.riderAssegnato = riderId || null;
 
-        // Aggiorna lo stato SOLO se l'ordine è già pronto (non toccare le comande in lavorazione)
         const statiGiaPronti = ['pronto', 'in consegna', 'consegnato'];
         if (statiGiaPronti.includes(ordine.stato)) {
             ordine.stato = riderId ? 'in consegna' : 'pronto';
         }
-        // Se è ancora 'in attesa' o 'in preparazione', lo stato resta invariato
 
         await ordine.save();
         res.status(200).json(ordine);
@@ -403,10 +418,13 @@ router.delete('/:id', async (req, res) => {
     try {
         const deleted = await Order.findByIdAndDelete(req.params.id);
         if (!deleted) return res.status(404).json({ message: "Ordine non trovato" });
-        const consumo = await calcolaConsumoScorte(deleted.pizze);
+        
+        // Calcola consumo solo sulle pizze non-premio
+        const pizzeNonPremio = (deleted.pizze || []).filter(p => !p.premioGratis);
+        const consumo = await calcolaConsumoScorte(pizzeNonPremio);
         await aggiornaScorte(consumo, +1);
         
-        // --- RIPRISTINA PUNTI SE L'ORDINE AVEVA UN PREMIO O PUNTI GUADAGNATI ---
+        // Ripristina punti
         try {
             if (deleted.cliente && deleted.stato !== 'eliminato') {
                 const utente = await User.findById(deleted.cliente);
@@ -414,14 +432,13 @@ router.delete('/:id', async (req, res) => {
                     const puntiRiscattati = deleted.puntiUsati || 0;
                     const puntiGuadagnati = deleted.puntiGuadagnatiOrdine || 0;
                     const saldoAttuale = utente.punti || 0;
-                    // Annulla: +punti riscattati (tornano), -punti guadagnati (vengono tolti)
                     const nuovoSaldo = Math.max(0, saldoAttuale + puntiRiscattati - puntiGuadagnati);
                     await User.findByIdAndUpdate(deleted.cliente, { punti: nuovoSaldo });
-                    console.log(`[PUNTI-DELETE] Utente ${utente.nome}: ripristino punti. ${saldoAttuale} + ${puntiRiscattati} (premio annullato) - ${puntiGuadagnati} (guadagno annullato) = ${nuovoSaldo}`);
+                    console.log(`[PUNTI-DELETE] Utente ${utente.nome}: ripristino punti`);
                 }
             }
         } catch (e) {
-            console.error("Errore ripristino punti su eliminazione:", e.message);
+            console.error("Errore ripristino punti:", e.message);
         }
         
         res.status(200).json({ message: "Ordine eliminato" });
