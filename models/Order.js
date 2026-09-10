@@ -41,6 +41,14 @@ const OrderSchema = new mongoose.Schema({
         ref: 'User',
         default: null 
     },
+        premioRiscattato: { 
+        type: mongoose.Schema.Types.ObjectId, 
+        ref: 'Reward',
+        default: null 
+    },
+    premioNome: { type: String, default: '' },
+    puntiUsati: { type: Number, default: 0 },
+    puntiGuadagnatiOrdine: { type: Number, default: 0 },
     stato: { 
         type: String, 
         enum: ['in attesa', 'in preparazione', 'pronto', 'in consegna', 'consegnato', 'eliminato'], 
