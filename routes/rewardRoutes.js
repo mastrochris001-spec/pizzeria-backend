@@ -4,7 +4,6 @@ const Reward = require('../models/Reward');
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 
-// Middleware auth
 const authMiddleware = (req, res, next) => {
     try {
         const authHeader = req.headers.authorization;
@@ -18,7 +17,6 @@ const authMiddleware = (req, res, next) => {
     }
 };
 
-// GET /api/rewards - Lista premi attivi (pubblico, ma con auth)
 router.get('/', authMiddleware, async (req, res) => {
     try {
         const rewards = await Reward.find({ attivo: true }).sort({ ordine: 1, puntiRichiesti: 1 });
@@ -28,7 +26,6 @@ router.get('/', authMiddleware, async (req, res) => {
     }
 });
 
-// GET /api/rewards/tutti - Lista tutti i premi (solo gestore)
 router.get('/tutti', authMiddleware, async (req, res) => {
     try {
         if (req.user.role !== 'gestore' && req.user.role !== 'staff') {
@@ -41,7 +38,6 @@ router.get('/tutti', authMiddleware, async (req, res) => {
     }
 });
 
-// GET /api/rewards/miei-punti - Saldo punti utente corrente
 router.get('/miei-punti', authMiddleware, async (req, res) => {
     try {
         const user = await User.findById(req.user.id);
@@ -52,7 +48,6 @@ router.get('/miei-punti', authMiddleware, async (req, res) => {
     }
 });
 
-// POST /api/rewards - Crea premio (solo gestore)
 router.post('/', authMiddleware, async (req, res) => {
     try {
         if (req.user.role !== 'gestore') {
@@ -75,7 +70,6 @@ router.post('/', authMiddleware, async (req, res) => {
     }
 });
 
-// PATCH /api/rewards/:id - Modifica premio (solo gestore)
 router.patch('/:id', authMiddleware, async (req, res) => {
     try {
         if (req.user.role !== 'gestore') {
@@ -89,7 +83,6 @@ router.patch('/:id', authMiddleware, async (req, res) => {
     }
 });
 
-// DELETE /api/rewards/:id - Elimina premio (solo gestore)
 router.delete('/:id', authMiddleware, async (req, res) => {
     try {
         if (req.user.role !== 'gestore') {
@@ -103,7 +96,6 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     }
 });
 
-// POST /api/rewards/verifica - Verifica se un utente può riscattare un premio
 router.post('/verifica', authMiddleware, async (req, res) => {
     try {
         const { rewardId } = req.body;
