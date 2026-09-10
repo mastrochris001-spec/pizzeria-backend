@@ -8,11 +8,12 @@ const OrderSchema = new mongoose.Schema({
     },
     nomeClienteCustom: { type: String, default: "" },
     telefonoCliente: { type: String, required: true },
-    pizze: [
+        pizze: [
         {
             pizza: { type: mongoose.Schema.Types.ObjectId, ref: 'Pizza', required: true },
             quantita: { type: Number, default: 1 },
-            note: { type: String, default: "" }
+            note: { type: String, default: "" },
+            premioGratis: { type: Boolean, default: false }
         }
     ],
     totale: { type: Number, required: true },
