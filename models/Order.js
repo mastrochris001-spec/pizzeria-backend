@@ -41,7 +41,7 @@ const OrderSchema = new mongoose.Schema({
         ref: 'User',
         default: null 
     },
-        premioRiscattato: { 
+    premioRiscattato: { 
         type: mongoose.Schema.Types.ObjectId, 
         ref: 'Reward',
         default: null 
