@@ -55,14 +55,15 @@ router.post('/', authMiddleware, async (req, res) => {
         if (!['gestore', 'staff', 'pizzaiolo'].includes(req.user.role)) {
             return res.status(403).json({ error: 'Solo lo staff può creare premi' });
         }
-        const { nome, descrizione, puntiRichiesti, foto, tipo, attivo } = req.body;
+                const { nome, descrizione, puntiRichiesti, foto, categoria, prodottoId, attivo } = req.body;
         if (!nome || !puntiRichiesti || puntiRichiesti < 1) {
             return res.status(400).json({ error: 'Nome e punti richiesti sono obbligatori' });
         }
         const reward = new Reward({
-            nome, descrizione, puntiRichiesti, 
+            nome, descrizione, puntiRichiesti,
             foto: foto || 'premio_default.png',
-            tipo: tipo || 'altro',
+            categoria: categoria || 'pizze classiche',
+            prodottoId: prodottoId || null,
             attivo: attivo !== false
         });
         await reward.save();
