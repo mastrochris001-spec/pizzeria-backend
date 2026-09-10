@@ -28,7 +28,7 @@ router.get('/', authMiddleware, async (req, res) => {
 
 router.get('/tutti', authMiddleware, async (req, res) => {
     try {
-        if (req.user.role !== 'gestore' && req.user.role !== 'staff') {
+        if (!['gestore', 'staff', 'pizzaiolo'].includes(req.user.role)) {
             return res.status(403).json({ error: 'Non autorizzato' });
         }
         const rewards = await Reward.find().sort({ ordine: 1, puntiRichiesti: 1 });
