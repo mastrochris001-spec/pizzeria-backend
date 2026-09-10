@@ -32,7 +32,10 @@ const userSchema = new mongoose.Schema({
         default: 'contanti' 
     },
     
-    preferenze: [String]
+    preferenze: [String],
+    
+    // --- SISTEMA FEDELTÀ ---
+    punti: { type: Number, default: 0, min: 0 }
 }, { timestamps: true }); 
 
 module.exports = mongoose.model('User', userSchema);
