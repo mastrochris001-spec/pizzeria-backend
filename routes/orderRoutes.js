@@ -195,18 +195,48 @@ router.post('/', async (req, res) => {
                         datiNuovoOrdine.premioNome = reward.nome;
                         datiNuovoOrdine.puntiUsati = reward.puntiRichiesti;
                         
-                        // Aggiunge il prodotto collegato al premio come voce GRATIS nell'ordine
+                        // Determina quale prodotto aggiungere (specifico o scelto dal cliente)
+                        let prodottoDaAggiungere = null;
+                        
                         if (reward.prodottoId) {
+                            // Premio specifico: usa il prodotto collegato
+                            prodottoDaAggiungere = reward.prodottoId;
+                            console.log(`[PREMIO] Premio specifico: ${reward.nome} → prodotto collegato`);
+                        } else if (req.body.prodottoSceltoId) {
+                            // Premio categoria: usa il prodotto scelto dal cliente
+                            prodottoDaAggiungere = req.body.prodottoSceltoId;
+                            
+                            // Valida che il prodotto sia della categoria corretta
+                            try {
+                                const prodottoScelto = await Pizza.findById(prodottoDaAggiungere);
+                                if (!prodottoScelto) {
+                                    return res.status(400).json({ error: 'Prodotto scelto non trovato' });
+                                }
+                                const categoriaProdotto = (prodottoScelto.categoria || '').toLowerCase();
+                                const categoriaPremio = (reward.categoria || '').toLowerCase();
+                                
+                                if (categoriaProdotto !== categoriaPremio) {
+                                    return res.status(400).json({ 
+                                        error: `Il prodotto scelto (${prodottoScelto.nome}) non appartiene alla categoria "${reward.categoria}" del premio` 
+                                    });
+                                }
+                                console.log(`[PREMIO] Premio categoria: ${reward.nome} → cliente ha scelto "${prodottoScelto.nome}"`);
+                            } catch (e) {
+                                return res.status(400).json({ error: 'Prodotto scelto non valido' });
+                            }
+                        }
+                        
+                        // Aggiungi il prodotto all'ordine come voce GRATIS
+                        if (prodottoDaAggiungere) {
                             if (!Array.isArray(datiNuovoOrdine.pizze)) datiNuovoOrdine.pizze = [];
                             datiNuovoOrdine.pizze.push({
-                                pizza: reward.prodottoId,
+                                pizza: prodottoDaAggiungere,
                                 quantita: 1,
                                 note: '🎁 PREMIO FEDELTÀ - GRATIS',
                                 premioGratis: true
                             });
                             // Incrementa il carico forno di 1 (il prodotto gratis occupa comunque uno slot)
                             datiNuovoOrdine.caricoSlot = (datiNuovoOrdine.caricoSlot || 0) + 1;
-                            console.log(`[PREMIO] Aggiunto prodotto gratis: ${reward.prodottoId}`);
                         }
                         
                         console.log(`[PREMIO] ${utenteCheck.nome} riscatta "${reward.nome}" (${reward.puntiRichiesti} punti)`);
