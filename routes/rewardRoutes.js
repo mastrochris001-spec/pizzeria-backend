@@ -19,7 +19,9 @@ const authMiddleware = (req, res, next) => {
 
 router.get('/', authMiddleware, async (req, res) => {
     try {
-        const rewards = await Reward.find({ attivo: true }).sort({ ordine: 1, puntiRichiesti: 1 });
+        const rewards = await Reward.find({ attivo: true })
+            .populate('prodottoId', 'nome categoria prezzo')
+            .sort({ ordine: 1, puntiRichiesti: 1 });
         res.json(rewards);
     } catch (e) {
         res.status(500).json({ error: e.message });
