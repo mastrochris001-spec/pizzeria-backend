@@ -37,6 +37,7 @@ const IngredienteEsaurito = mongoose.models.IngredienteEsaurito || mongoose.mode
 const authRoutes = require('./routes/authRoutes');
 const pizzaRoutes = require('./routes/pizzaRoutes');
 const orderRoutes = require('./routes/orderRoutes');
+const rewardRoutes = require('./routes/rewardRoutes');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -239,7 +240,7 @@ app.patch('/api/inventory/:data', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- Modifica ordine (con aggiornamento User e rubrica) ---
+// --- Modifica ordine (con protezione profili staff) ---
 app.patch('/api/ordini/:id/modifica', async (req, res) => {
     try {
         const Order = require('./models/Order');
@@ -272,23 +273,29 @@ app.patch('/api/ordini/:id/modifica', async (req, res) => {
             return res.status(404).json({ message: "Ordine non trovato" });
         }
 
-        // --- AGGIORNA DATI UTENTE REGISTRATO ANCHE SU MODIFICA ORDINE ---
+        // --- AGGIORNA DATI SOLO PER CLIENTI (mai per staff/pizzaiolo/rider) ---
         try {
             if (updatedOrder && updatedOrder.cliente) {
-                const updateUserData = {};
-                if (nomeClienteCustom) updateUserData.nome = nomeClienteCustom;
-                if (telefonoCliente) updateUserData.telefono = telefonoCliente;
-                if (indirizzoConsegna && indirizzoConsegna !== 'Asporto') {
-                    updateUserData.indirizzo = indirizzoConsegna;
-                }
-                if (citofono) updateUserData.citofono = citofono;
+                const utenteRegistrato = await User.findById(updatedOrder.cliente);
                 
-                if (Object.keys(updateUserData).length > 0) {
-                    await User.findByIdAndUpdate(updatedOrder.cliente, updateUserData);
-                    console.log(`[USER] Dati aggiornati su modifica ordine per: ${updatedOrder.cliente}`);
+                if (utenteRegistrato && utenteRegistrato.role === 'cliente') {
+                    const updateUserData = {};
+                    if (nomeClienteCustom) updateUserData.nome = nomeClienteCustom;
+                    if (telefonoCliente) updateUserData.telefono = telefonoCliente;
+                    if (indirizzoConsegna && indirizzoConsegna !== 'Asporto') {
+                        updateUserData.indirizzo = indirizzoConsegna;
+                    }
+                    if (citofono) updateUserData.citofono = citofono;
+                    
+                    if (Object.keys(updateUserData).length > 0) {
+                        await User.findByIdAndUpdate(updatedOrder.cliente, updateUserData);
+                        console.log(`[USER] Dati cliente aggiornati su modifica: ${updateUserData.nome}`);
+                    }
+                } else if (utenteRegistrato) {
+                    console.log(`[USER] Account ${utenteRegistrato.role}: profilo NON modificato`);
                 }
                 
-                // Aggiorna anche la rubrica (utile per fast checkout staff)
+                // Aggiorna anche la rubrica (utile per fast checkout staff) - SEMPRE
                 const telRub = String(telefonoCliente || updatedOrder.telefonoCliente || '').trim();
                 const nomeRub = String(nomeClienteCustom || updatedOrder.nomeClienteCustom || '').trim();
                 if (telRub && nomeRub) {
@@ -403,7 +410,7 @@ app.get('/api/clienti/ricerca', async (req, res) => {
 
         const registrati = await User.find({
             $or: [{ nome: regex }, { telefono: regex }, { email: regex }]
-        }).select('nome telefono email indirizzo citofono').limit(8);
+        }).select('nome telefono email indirizzo citofono punti').limit(8);
 
         const rubrica = await RubricaCliente.find({
             $or: [{ nome: regex }, { telefono: regex }]
@@ -418,6 +425,7 @@ app.get('/api/clienti/ricerca', async (req, res) => {
                 telefono: u.telefono || '',
                 indirizzo: (recRub && recRub.indirizzo) ? recRub.indirizzo : (u.indirizzo || ''),
                 citofono: (recRub && recRub.citofono) ? recRub.citofono : (u.citofono || ''),
+                punti: u.punti || 0,
                 tipo: 'registrato'
             };
         });
@@ -427,7 +435,9 @@ app.get('/api/clienti/ricerca', async (req, res) => {
             if (!dup) {
                 risultati.push({
                     nome: r.nome || '', telefono: r.telefono || '',
-                    indirizzo: r.indirizzo || '', citofono: r.citofono || '', tipo: 'rubrica'
+                    indirizzo: r.indirizzo || '', citofono: r.citofono || '', 
+                    punti: 0,
+                    tipo: 'rubrica'
                 });
             }
         });
@@ -476,6 +486,7 @@ app.get('/api/forza-inserimento', async (req, res) => {
 app.use('/api/auth', authRoutes); 
 app.use('/api/pizze', pizzaRoutes);
 app.use('/api/ordini', orderRoutes);
+app.use('/api/rewards', rewardRoutes);
 
 // --- Gestore errori globale ---
 app.use((err, req, res, next) => {
