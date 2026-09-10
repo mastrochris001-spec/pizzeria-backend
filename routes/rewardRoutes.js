@@ -50,8 +50,8 @@ router.get('/miei-punti', authMiddleware, async (req, res) => {
 
 router.post('/', authMiddleware, async (req, res) => {
     try {
-        if (req.user.role !== 'gestore') {
-            return res.status(403).json({ error: 'Solo il gestore può creare premi' });
+        if (!['gestore', 'staff', 'pizzaiolo'].includes(req.user.role)) {
+            return res.status(403).json({ error: 'Solo lo staff può creare premi' });
         }
         const { nome, descrizione, puntiRichiesti, foto, tipo, attivo } = req.body;
         if (!nome || !puntiRichiesti || puntiRichiesti < 1) {
@@ -72,8 +72,8 @@ router.post('/', authMiddleware, async (req, res) => {
 
 router.patch('/:id', authMiddleware, async (req, res) => {
     try {
-        if (req.user.role !== 'gestore') {
-            return res.status(403).json({ error: 'Solo il gestore può modificare premi' });
+        if (!['gestore', 'staff', 'pizzaiolo'].includes(req.user.role)) {
+            return res.status(403).json({ error: 'Solo lo staff può modificare premi' });
         }
         const updated = await Reward.findByIdAndUpdate(req.params.id, req.body, { new: true });
         if (!updated) return res.status(404).json({ error: 'Premio non trovato' });
@@ -85,8 +85,8 @@ router.patch('/:id', authMiddleware, async (req, res) => {
 
 router.delete('/:id', authMiddleware, async (req, res) => {
     try {
-        if (req.user.role !== 'gestore') {
-            return res.status(403).json({ error: 'Solo il gestore può eliminare premi' });
+        if (!['gestore', 'staff', 'pizzaiolo'].includes(req.user.role)) {
+            return res.status(403).json({ error: 'Solo lo staff può eliminare premi' });
         }
         const deleted = await Reward.findByIdAndDelete(req.params.id);
         if (!deleted) return res.status(404).json({ error: 'Premio non trovato' });
