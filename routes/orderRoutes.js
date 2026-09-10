@@ -5,6 +5,7 @@ const Order = require('../models/Order');
 const User = require('../models/User');
 const Inventory = require('../models/Inventory');
 const Pizza = require('../models/Pizza');
+const Reward = require('../models/Reward');
 
 const rubricaSchema = new mongoose.Schema({
     nome: String,
@@ -174,8 +175,55 @@ router.post('/', async (req, res) => {
             }
             datiNuovoOrdine.riderAssegnato = riderSelezionato;
         }
+        
+        // --- GESTIONE PREMIO RISCATTATO (se presente nel checkout) ---
+        let puntiDaScalare = 0;
+        let puntiGuadagnati = Math.floor(parseFloat(req.body.totale) || 0);
+        
+        if (req.body.premioRiscattatoId) {
+            try {
+                const reward = await Reward.findById(req.body.premioRiscattatoId);
+                const utenteCheck = await User.findById(cliente);
+                
+                if (reward && reward.attivo && utenteCheck) {
+                    const puntiUtente = utenteCheck.punti || 0;
+                    if (puntiUtente >= reward.puntiRichiesti) {
+                        puntiDaScalare = reward.puntiRichiesti;
+                        datiNuovoOrdine.premioRiscattato = reward._id;
+                        datiNuovoOrdine.premioNome = reward.nome;
+                        datiNuovoOrdine.puntiUsati = reward.puntiRichiesti;
+                        console.log(`[PREMIO] ${utenteCheck.nome} riscatta "${reward.nome}" (${reward.puntiRichiesti} punti)`);
+                    } else {
+                        return res.status(400).json({ 
+                            error: `Punti insufficienti per riscattare "${reward.nome}". Hai ${puntiUtente} punti, ne servono ${reward.puntiRichiesti}.` 
+                        });
+                    }
+                } else {
+                    return res.status(400).json({ error: 'Premio non disponibile o non valido' });
+                }
+            } catch (e) {
+                console.error("Errore verifica premio:", e.message);
+                return res.status(400).json({ error: 'Errore verifica premio: ' + e.message });
+            }
+        }
+        
+        datiNuovoOrdine.puntiGuadagnatiOrdine = puntiGuadagnati;
+        
         const nuovoOrdine = new Order(datiNuovoOrdine);
         const ordineSalvato = await nuovoOrdine.save();
+        
+        // --- AGGIORNA PUNTI UTENTE: scala riscatto + aggiungi guadagnati ---
+        try {
+            const utente = await User.findById(cliente);
+            if (utente && utente.role === 'cliente') {
+                const saldoAttuale = utente.punti || 0;
+                const nuovoSaldo = Math.max(0, saldoAttuale - puntiDaScalare + puntiGuadagnati);
+                await User.findByIdAndUpdate(cliente, { punti: nuovoSaldo });
+                console.log(`[PUNTI] Utente ${utente.nome}: ${saldoAttuale} - ${puntiDaScalare} (premio) + ${puntiGuadagnati} (guadagnati) = ${nuovoSaldo}`);
+            }
+        } catch (e) {
+            console.error("Errore aggiornamento punti:", e.message);
+        }
         
         // --- SALVATAGGIO RUBRICA (tutti i clienti) ---
         try {
@@ -290,11 +338,12 @@ router.get('/attivi', async (req, res) => {
 router.get('/', async (req, res) => {
     try {
         const ordini = await Order.find({})
-            .populate('cliente', 'nome email indirizzo telefono')
+            .populate('cliente', 'nome email indirizzo telefono punti')
             .populate({
                 path: 'pizze.pizza',
                 select: 'nome categoria prezzo'
             })
+            .populate('premioRiscattato', 'nome puntiRichiesti tipo')
             .sort({ createdAt: -1 });
         res.status(200).json(ordini);
     } catch (error) {
@@ -356,6 +405,25 @@ router.delete('/:id', async (req, res) => {
         if (!deleted) return res.status(404).json({ message: "Ordine non trovato" });
         const consumo = await calcolaConsumoScorte(deleted.pizze);
         await aggiornaScorte(consumo, +1);
+        
+        // --- RIPRISTINA PUNTI SE L'ORDINE AVEVA UN PREMIO O PUNTI GUADAGNATI ---
+        try {
+            if (deleted.cliente && deleted.stato !== 'eliminato') {
+                const utente = await User.findById(deleted.cliente);
+                if (utente && utente.role === 'cliente') {
+                    const puntiRiscattati = deleted.puntiUsati || 0;
+                    const puntiGuadagnati = deleted.puntiGuadagnatiOrdine || 0;
+                    const saldoAttuale = utente.punti || 0;
+                    // Annulla: +punti riscattati (tornano), -punti guadagnati (vengono tolti)
+                    const nuovoSaldo = Math.max(0, saldoAttuale + puntiRiscattati - puntiGuadagnati);
+                    await User.findByIdAndUpdate(deleted.cliente, { punti: nuovoSaldo });
+                    console.log(`[PUNTI-DELETE] Utente ${utente.nome}: ripristino punti. ${saldoAttuale} + ${puntiRiscattati} (premio annullato) - ${puntiGuadagnati} (guadagno annullato) = ${nuovoSaldo}`);
+                }
+            }
+        } catch (e) {
+            console.error("Errore ripristino punti su eliminazione:", e.message);
+        }
+        
         res.status(200).json({ message: "Ordine eliminato" });
     } catch (err) {
         res.status(500).json({ message: "Errore eliminazione" });
