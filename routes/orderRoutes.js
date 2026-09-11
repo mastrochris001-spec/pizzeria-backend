@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
+const jwt = require('jsonwebtoken');
 const Order = require('../models/Order');
 const User = require('../models/User');
 const Inventory = require('../models/Inventory');
@@ -40,7 +41,6 @@ async function calcolaConsumoScorte(pizze) {
     const consumo = { integrale: 0, glutenFree: 0, cannoli: 0, arancini: 0 };
     if (!Array.isArray(pizze)) return consumo;
     for (const p of pizze) {
-        // Salta i prodotti premio gratis (non consumano scorte)
         if (p.premioGratis) continue;
         let nomePizza = '';
         try {
@@ -177,16 +177,16 @@ router.post('/', async (req, res) => {
             }
             datiNuovoOrdine.riderAssegnato = riderSelezionato;
         }
-        
+
         // --- GESTIONE PREMIO RISCATTATO ---
         let puntiDaScalare = 0;
         let puntiGuadagnati = Math.floor(parseFloat(req.body.totale) || 0);
-        
+
         if (req.body.premioRiscattatoId) {
             try {
                 const reward = await Reward.findById(req.body.premioRiscattatoId);
                 const utenteCheck = await User.findById(cliente);
-                
+
                 if (reward && reward.attivo && utenteCheck) {
                     const puntiUtente = utenteCheck.punti || 0;
                     if (puntiUtente >= reward.puntiRichiesti) {
@@ -194,19 +194,13 @@ router.post('/', async (req, res) => {
                         datiNuovoOrdine.premioRiscattato = reward._id;
                         datiNuovoOrdine.premioNome = reward.nome;
                         datiNuovoOrdine.puntiUsati = reward.puntiRichiesti;
-                        
-                        // Determina quale prodotto aggiungere (specifico o scelto dal cliente)
+
                         let prodottoDaAggiungere = null;
-                        
+
                         if (reward.prodottoId) {
-                            // Premio specifico: usa il prodotto collegato
                             prodottoDaAggiungere = reward.prodottoId;
-                            console.log(`[PREMIO] Premio specifico: ${reward.nome} → prodotto collegato`);
                         } else if (req.body.prodottoSceltoId) {
-                            // Premio categoria: usa il prodotto scelto dal cliente
                             prodottoDaAggiungere = req.body.prodottoSceltoId;
-                            
-                            // Valida che il prodotto sia della categoria corretta
                             try {
                                 const prodottoScelto = await Pizza.findById(prodottoDaAggiungere);
                                 if (!prodottoScelto) {
@@ -214,19 +208,16 @@ router.post('/', async (req, res) => {
                                 }
                                 const categoriaProdotto = (prodottoScelto.categoria || '').toLowerCase();
                                 const categoriaPremio = (reward.categoria || '').toLowerCase();
-                                
                                 if (categoriaProdotto !== categoriaPremio) {
-                                    return res.status(400).json({ 
-                                        error: `Il prodotto scelto (${prodottoScelto.nome}) non appartiene alla categoria "${reward.categoria}" del premio` 
+                                    return res.status(400).json({
+                                        error: `Il prodotto scelto non appartiene alla categoria del premio`
                                     });
                                 }
-                                console.log(`[PREMIO] Premio categoria: ${reward.nome} → cliente ha scelto "${prodottoScelto.nome}"`);
                             } catch (e) {
                                 return res.status(400).json({ error: 'Prodotto scelto non valido' });
                             }
                         }
-                        
-                        // Aggiungi il prodotto all'ordine come voce GRATIS
+
                         if (prodottoDaAggiungere) {
                             if (!Array.isArray(datiNuovoOrdine.pizze)) datiNuovoOrdine.pizze = [];
                             datiNuovoOrdine.pizze.push({
@@ -235,14 +226,11 @@ router.post('/', async (req, res) => {
                                 note: '🎁 PREMIO FEDELTÀ - GRATIS',
                                 premioGratis: true
                             });
-                            // Incrementa il carico forno di 1 (il prodotto gratis occupa comunque uno slot)
                             datiNuovoOrdine.caricoSlot = (datiNuovoOrdine.caricoSlot || 0) + 1;
                         }
-                        
-                        console.log(`[PREMIO] ${utenteCheck.nome} riscatta "${reward.nome}" (${reward.puntiRichiesti} punti)`);
                     } else {
-                        return res.status(400).json({ 
-                            error: `Punti insufficienti per riscattare "${reward.nome}". Hai ${puntiUtente} punti, ne servono ${reward.puntiRichiesti}.` 
+                        return res.status(400).json({
+                            error: `Punti insufficienti per riscattare "${reward.nome}". Hai ${puntiUtente} punti, ne servono ${reward.puntiRichiesti}.`
                         });
                     }
                 } else {
@@ -253,12 +241,12 @@ router.post('/', async (req, res) => {
                 return res.status(400).json({ error: 'Errore verifica premio: ' + e.message });
             }
         }
-        
+
         datiNuovoOrdine.puntiGuadagnatiOrdine = puntiGuadagnati;
-        
+
         const nuovoOrdine = new Order(datiNuovoOrdine);
         const ordineSalvato = await nuovoOrdine.save();
-        
+
         // --- AGGIORNA PUNTI UTENTE ---
         try {
             const utente = await User.findById(cliente);
@@ -266,12 +254,12 @@ router.post('/', async (req, res) => {
                 const saldoAttuale = utente.punti || 0;
                 const nuovoSaldo = Math.max(0, saldoAttuale - puntiDaScalare + puntiGuadagnati);
                 await User.findByIdAndUpdate(cliente, { punti: nuovoSaldo });
-                console.log(`[PUNTI] Utente ${utente.nome}: ${saldoAttuale} - ${puntiDaScalare} (premio) + ${puntiGuadagnati} (guadagnati) = ${nuovoSaldo}`);
+                console.log(`[PUNTI] Utente ${utente.nome}: ${saldoAttuale} - ${puntiDaScalare} + ${puntiGuadagnati} = ${nuovoSaldo}`);
             }
         } catch (e) {
             console.error("Errore aggiornamento punti:", e.message);
         }
-        
+
         // --- SALVATAGGIO RUBRICA ---
         try {
             const telRub = String(req.body.telefonoCliente || '').trim();
@@ -291,12 +279,11 @@ router.post('/', async (req, res) => {
         } catch (e) {
             console.error("Errore salvataggio rubrica:", e.message);
         }
-        
+
         // --- AGGIORNA DATI CLIENTE ---
         try {
             if (cliente) {
                 const utenteRegistrato = await User.findById(cliente);
-                
                 if (utenteRegistrato && utenteRegistrato.role === 'cliente') {
                     const updateUserData = {};
                     if (req.body.nomeClienteCustom && req.body.nomeClienteCustom.trim()) {
@@ -313,17 +300,13 @@ router.post('/', async (req, res) => {
                     }
                     if (Object.keys(updateUserData).length > 0) {
                         await User.findByIdAndUpdate(cliente, updateUserData);
-                        console.log(`[USER] Dati cliente aggiornati: ${updateUserData.nome}`);
                     }
-                } else if (utenteRegistrato) {
-                    console.log(`[USER] Account ${utenteRegistrato.role}: profilo NON modificato`);
                 }
             }
         } catch (e) {
             console.error("Errore aggiornamento User:", e.message);
         }
-        
-        // Consumo scorte calcolato solo sulle pizze originali (esclude prodotti premio gratis)
+
         const consumo = await calcolaConsumoScorte(pizze);
         await aggiornaScorte(consumo, -1);
         res.status(201).json(ordineSalvato);
@@ -383,6 +366,59 @@ router.get('/attivi', async (req, res) => {
     }
 });
 
+// --- RECUPERO PUNTI FEDELTÀ (solo gestore/staff, DA RIMUOVERE DOPO L'USO) ---
+router.get('/recupera-punti-tutti', async (req, res) => {
+    try {
+        const authHeader = req.headers.authorization;
+        if (!authHeader) return res.status(401).json({ error: 'Token mancante' });
+
+        const token = authHeader.split(' ')[1];
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'chiave_temporanea');
+
+        if (!['gestore', 'staff'].includes(decoded.role)) {
+            return res.status(403).json({ error: 'Solo gestore o staff possono eseguire questa operazione' });
+        }
+
+        const clienti = await User.find({ role: 'cliente' });
+        const risultati = [];
+
+        for (const cliente of clienti) {
+            const ordini = await Order.find({
+                cliente: cliente._id,
+                stato: { $ne: 'eliminato' }
+            });
+
+            let puntiGuadagnati = 0;
+            let puntiUsati = 0;
+
+            ordini.forEach(o => {
+                puntiGuadagnati += o.puntiGuadagnatiOrdine || 0;
+                puntiUsati += o.puntiUsati || 0;
+            });
+
+            const saldoReale = Math.max(0, puntiGuadagnati - puntiUsati);
+            const saldoAttuale = cliente.punti || 0;
+
+            if (saldoReale !== saldoAttuale) {
+                await User.findByIdAndUpdate(cliente._id, { punti: saldoReale });
+                risultati.push({
+                    nome: cliente.nome,
+                    prima: saldoAttuale,
+                    dopo: saldoReale
+                });
+            }
+        }
+
+        res.json({
+            messaggio: 'Punti ricalcolati dallo storico ordini',
+            clientiAggiornati: risultati.length,
+            dettagli: risultati
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 router.get('/', async (req, res) => {
     try {
         const ordini = await Order.find({})
@@ -391,7 +427,7 @@ router.get('/', async (req, res) => {
                 path: 'pizze.pizza',
                 select: 'nome categoria prezzo'
             })
-            .populate('premioRiscattato', 'nome puntiRichiesti tipo categoria')
+            .populate('premioRiscattato', 'nome puntiRichiesti categoria')
             .sort({ createdAt: -1 });
         res.status(200).json(ordini);
     } catch (error) {
@@ -448,13 +484,11 @@ router.delete('/:id', async (req, res) => {
     try {
         const deleted = await Order.findByIdAndDelete(req.params.id);
         if (!deleted) return res.status(404).json({ message: "Ordine non trovato" });
-        
-        // Calcola consumo solo sulle pizze non-premio
+
         const pizzeNonPremio = (deleted.pizze || []).filter(p => !p.premioGratis);
         const consumo = await calcolaConsumoScorte(pizzeNonPremio);
         await aggiornaScorte(consumo, +1);
-        
-        // Ripristina punti
+
         try {
             if (deleted.cliente && deleted.stato !== 'eliminato') {
                 const utente = await User.findById(deleted.cliente);
@@ -470,7 +504,7 @@ router.delete('/:id', async (req, res) => {
         } catch (e) {
             console.error("Errore ripristino punti:", e.message);
         }
-        
+
         res.status(200).json({ message: "Ordine eliminato" });
     } catch (err) {
         res.status(500).json({ message: "Errore eliminazione" });
@@ -488,55 +522,5 @@ router.get('/fix-pagato', async (req, res) => {
         res.status(500).json({ error: e.message });
     }
 });
-// --- RECUPERO PUNTI FEDELTÀ (solo gestore, DA RIMUOVERE DOPO L'USO) ---
-router.get('/recupera-punti-tutti', async (req, res) => {
-    try {
-        const authHeader = req.headers.authorization;
-        if (!authHeader) return res.status(401).json({ error: 'Token mancante' });
 
-        const jwt = require('jsonwebtoken');
-        const token = authHeader.split(' ')[1];
-        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'chiave_temporanea');
-
-        if (decoded.role !== 'gestore')
-
-        const clienti = await User.find({ role: 'cliente' });
-        const risultati = [];
-
-        for (const cliente of clienti) {
-            const ordini = await Order.find({
-                cliente: cliente._id,
-                stato: { $ne: 'eliminato' }
-            });
-
-            let puntiGuadagnati = 0;
-            let puntiUsati = 0;
-
-            ordini.forEach(o => {
-                puntiGuadagnati += o.puntiGuadagnatiOrdine || 0;
-                puntiUsati += o.puntiUsati || 0;
-            });
-
-            const saldoReale = Math.max(0, puntiGuadagnati - puntiUsati);
-            const saldoAttuale = cliente.punti || 0;
-
-            if (saldoReale !== saldoAttuale) {
-                await User.findByIdAndUpdate(cliente._id, { punti: saldoReale });
-                risultati.push({
-                    nome: cliente.nome,
-                    prima: saldoAttuale,
-                    dopo: saldoReale
-                });
-            }
-        }
-
-        res.json({
-            messaggio: 'Punti ricalcolati dallo storico ordini',
-            clientiAggiornati: risultati.length,
-            dettagli: risultati
-        });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
 module.exports = router;
