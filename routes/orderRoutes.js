@@ -488,5 +488,57 @@ router.get('/fix-pagato', async (req, res) => {
         res.status(500).json({ error: e.message });
     }
 });
+// --- RECUPERO PUNTI FEDELTÀ (solo gestore, DA RIMUOVERE DOPO L'USO) ---
+router.get('/recupera-punti-tutti', async (req, res) => {
+    try {
+        const authHeader = req.headers.authorization;
+        if (!authHeader) return res.status(401).json({ error: 'Token mancante' });
 
+        const jwt = require('jsonwebtoken');
+        const token = authHeader.split(' ')[1];
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'chiave_temporanea');
+
+        if (decoded.role !== 'gestore') {
+            return res.status(403).json({ error: 'Solo il gestore puo eseguire questa operazione' });
+        }
+
+        const clienti = await User.find({ role: 'cliente' });
+        const risultati = [];
+
+        for (const cliente of clienti) {
+            const ordini = await Order.find({
+                cliente: cliente._id,
+                stato: { $ne: 'eliminato' }
+            });
+
+            let puntiGuadagnati = 0;
+            let puntiUsati = 0;
+
+            ordini.forEach(o => {
+                puntiGuadagnati += o.puntiGuadagnatiOrdine || 0;
+                puntiUsati += o.puntiUsati || 0;
+            });
+
+            const saldoReale = Math.max(0, puntiGuadagnati - puntiUsati);
+            const saldoAttuale = cliente.punti || 0;
+
+            if (saldoReale !== saldoAttuale) {
+                await User.findByIdAndUpdate(cliente._id, { punti: saldoReale });
+                risultati.push({
+                    nome: cliente.nome,
+                    prima: saldoAttuale,
+                    dopo: saldoReale
+                });
+            }
+        }
+
+        res.json({
+            messaggio: 'Punti ricalcolati dallo storico ordini',
+            clientiAggiornati: risultati.length,
+            dettagli: risultati
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
 module.exports = router;
