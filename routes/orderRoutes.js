@@ -469,5 +469,59 @@ router.get('/fix-pagato', async (req, res) => {
         res.status(500).json({ error: e.message });
     }
 });
+// --- RECUPERO PUNTI STORICI (solo gestore/staff, DA RIMUOVERE DOPO L'USO) ---
+router.get('/recupera-punti-tutti', async (req, res) => {
+    try {
+        const authHeader = req.headers.authorization;
+        if (!authHeader) return res.status(401).json({ error: 'Token mancante' });
+        const token = authHeader.split(' ')[1];
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || 'chiave_temporanea');
+        if (!['gestore', 'staff'].includes(decoded.role)) {
+            return res.status(403).json({ error: 'Solo gestore o staff' });
+        }
 
+        const clienti = await User.find({ role: 'cliente' });
+        const risultati = [];
+
+        for (const cliente of clienti) {
+            const ordini = await Order.find({
+                cliente: cliente._id,
+                stato: { $ne: 'eliminato' }
+            });
+
+            let puntiGuadagnati = 0;
+            let puntiUsati = 0;
+
+            ordini.forEach(o => {
+                let puntiOrdine = 0;
+                // 1) Campo VECCHIO del sistema punti storico
+                if (typeof o.puntiGuadagnati === 'number' && o.puntiGuadagnati > 0) {
+                    puntiOrdine = o.puntiGuadagnati;
+                }
+                // 2) Campo NUOVO degli ordini recenti
+                else if (typeof o.puntiGuadagnatiOrdine === 'number' && o.puntiGuadagnatiOrdine > 0) {
+                    puntiOrdine = o.puntiGuadagnatiOrdine;
+                }
+                // 3) Ultima spiaggia: stima dal totale
+                else {
+                    puntiOrdine = Math.floor(parseFloat(o.totale) || 0);
+                }
+                puntiGuadagnati += puntiOrdine;
+                puntiUsati += o.puntiUsati || 0;
+            });
+
+            const saldoReale = Math.max(0, puntiGuadagnati - puntiUsati);
+            const saldoAttuale = cliente.punti || 0;
+
+            if (saldoReale !== saldoAttuale) {
+                await User.findByIdAndUpdate(cliente._id, { punti: saldoReale });
+                risultati.push({ nome: cliente.nome, prima: saldoAttuale, dopo: saldoReale });
+            }
+        }
+
+        res.json({ clientiAggiornati: risultati.length, dettagli: risultati });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
 module.exports = router;
