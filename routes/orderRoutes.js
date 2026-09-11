@@ -498,9 +498,7 @@ router.get('/recupera-punti-tutti', async (req, res) => {
         const token = authHeader.split(' ')[1];
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'chiave_temporanea');
 
-        if (decoded.role !== 'gestore') {
-            return res.status(403).json({ error: 'Solo il gestore puo eseguire questa operazione' });
-        }
+        if (decoded.role !== 'gestore')
 
         const clienti = await User.find({ role: 'cliente' });
         const risultati = [];
