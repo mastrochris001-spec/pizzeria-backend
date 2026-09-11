@@ -391,8 +391,12 @@ router.get('/recupera-punti-tutti', async (req, res) => {
             let puntiGuadagnati = 0;
             let puntiUsati = 0;
 
-            ordini.forEach(o => {
-                puntiGuadagnati += o.puntiGuadagnatiOrdine || 0;
+                        ordini.forEach(o => {
+                // Se il campo punti non esiste (ordini vecchi), stimalo dal totale: 1 punto ogni €1
+                const puntiOrdine = (o.puntiGuadagnatiOrdine !== undefined && o.puntiGuadagnatiOrdine !== null)
+                    ? o.puntiGuadagnatiOrdine
+                    : Math.floor(parseFloat(o.totale) || 0);
+                puntiGuadagnati += puntiOrdine;
                 puntiUsati += o.puntiUsati || 0;
             });
 
