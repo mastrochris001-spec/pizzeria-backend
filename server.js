@@ -487,6 +487,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/pizze', pizzaRoutes);
 app.use('/api/ordini', orderRoutes);
 app.use('/api/rewards', rewardRoutes);
+app.use('/api/categorie', require('./routes/categorieRoutes'));
 
 // --- Gestore errori globale ---
 app.use((err, req, res, next) => {
