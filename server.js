@@ -12,7 +12,6 @@ const seedPizze = require('./seed');
 const User = require('./models/User'); 
 const Inventory = require('./models/Inventory'); 
 
-// --- MODELLO IMPOSTAZIONI SLOT ---
 const settingsSlotSchema = new mongoose.Schema({
     durataSlot: { type: Number, default: 15 },
     limiteForno: { type: Number, default: 18 },
@@ -21,7 +20,6 @@ const settingsSlotSchema = new mongoose.Schema({
 });
 const SettingsSlot = mongoose.models.SettingsSlot || mongoose.model('SettingsSlot', settingsSlotSchema);
 
-// --- MODELLO RUBRICA CLIENTI ---
 const rubricaSchema = new mongoose.Schema({
     nome: String,
     telefono: { type: String, index: true },
@@ -42,13 +40,11 @@ const rewardRoutes = require('./routes/rewardRoutes');
 const app = express();
 app.set('trust proxy', 1);
 
-// --- Logger ---
 app.use((req, res, next) => {
     console.log(`[VERCEL LOG] ${req.method} ${req.url}`);
     next();
 });
 
-// --- CONNESSIONE MONGODB CON CACHE (obbligatoria per Vercel serverless) ---
 const MONGO_URI = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/pizzeria_db';
 
 let cached = global.mongoose;
@@ -87,20 +83,17 @@ async function connectDB() {
     return cached.conn;
 }
 
-// --- CORS ---
 app.use(cors({
     origin: '*',
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// --- OPTIONS immediato ---
 app.use((req, res, next) => {
     if (req.method === 'OPTIONS') return res.sendStatus(204);
     next();
 });
 
-// --- Middleware: connetti al DB per ogni richiesta (con cache) ---
 app.use(async (req, res, next) => {
     try {
         await connectDB();
@@ -116,7 +109,6 @@ app.use(helmet({
 
 app.use(express.json({ limit: '10mb' }));
 
-// --- Sanitizzazione input ---
 app.use((req, res, next) => {
     const sanitize = (obj) => {
         if (obj instanceof Object) {
@@ -134,7 +126,6 @@ app.use((req, res, next) => {
     next();
 });
 
-// --- Rate limiter ---
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 2000,
@@ -148,7 +139,6 @@ app.get('/', (req, res) => {
     res.status(200).send("Backend Pizzeria Sole Online!");
 });
 
-// --- Endpoint ping per test connessione ---
 app.get('/api/ping', async (req, res) => {
     try {
         const state = mongoose.connection.readyState;
@@ -163,7 +153,6 @@ app.get('/api/ping', async (req, res) => {
     }
 });
 
-// --- Swagger ---
 const swaggerOptions = {
     swaggerDefinition: {
         openapi: '3.0.0',
@@ -183,7 +172,6 @@ try {
     console.log("Swagger non disponibile:", e.message);
 }
 
-// --- Rotte Riders ---
 app.get('/api/riders/logistica', async (req, res) => {
     try {
         const riders = await User.find({ role: 'rider' }).select('nome cognome email isOnline _id');
@@ -211,7 +199,6 @@ app.get('/api/riders', async (req, res) => {
     }
 });
 
-// --- Rotte Inventory ---
 app.get('/api/inventory/:data', async (req, res) => {
     try {
         let inv = await Inventory.findOne({ data: req.params.data });
@@ -240,7 +227,6 @@ app.patch('/api/inventory/:data', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- Modifica ordine (con protezione profili staff) ---
 app.patch('/api/ordini/:id/modifica', async (req, res) => {
     try {
         const Order = require('./models/Order');
@@ -273,7 +259,6 @@ app.patch('/api/ordini/:id/modifica', async (req, res) => {
             return res.status(404).json({ message: "Ordine non trovato" });
         }
 
-        // --- AGGIORNA DATI SOLO PER CLIENTI (mai per staff/pizzaiolo/rider) ---
         try {
             if (updatedOrder && updatedOrder.cliente) {
                 const utenteRegistrato = await User.findById(updatedOrder.cliente);
@@ -295,7 +280,6 @@ app.patch('/api/ordini/:id/modifica', async (req, res) => {
                     console.log(`[USER] Account ${utenteRegistrato.role}: profilo NON modificato`);
                 }
                 
-                // Aggiorna anche la rubrica (utile per fast checkout staff) - SEMPRE
                 const telRub = String(telefonoCliente || updatedOrder.telefonoCliente || '').trim();
                 const nomeRub = String(nomeClienteCustom || updatedOrder.nomeClienteCustom || '').trim();
                 if (telRub && nomeRub) {
@@ -321,7 +305,6 @@ app.patch('/api/ordini/:id/modifica', async (req, res) => {
     }
 });
 
-// --- Rotte Ingredienti Esauriti ---
 app.get('/api/ingredienti-esauriti', async (req, res) => {
     try {
         const list = await IngredienteEsaurito.find();
@@ -343,7 +326,6 @@ app.delete('/api/ingredienti-esauriti/:nome', async (req, res) => {
     } catch(e) { res.status(500).json({error: e.message}); }
 });
 
-// --- Stato Locale ---
 const settingsSchema = new mongoose.Schema({
     isLocaleAperto: { type: Boolean, default: true }
 });
@@ -371,7 +353,6 @@ app.patch('/api/impostazioni/stato-locale', async (req, res) => {
     }
 });
 
-// --- Rotte Impostazioni Slot ---
 app.get('/api/impostazioni/slot', async (req, res) => {
     try {
         let settings = await SettingsSlot.findOne();
@@ -396,7 +377,6 @@ app.patch('/api/impostazioni/slot', async (req, res) => {
     } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// --- Ricerca clienti (registrati + rubrica) ---
 app.get('/api/clienti/ricerca', async (req, res) => {
     try {
         const jwt = require('jsonwebtoken');
@@ -448,7 +428,6 @@ app.get('/api/clienti/ricerca', async (req, res) => {
     }
 });
 
-// --- Storico ordini personale ---
 app.get('/api/ordini/storico-personale', async (req, res) => {
     try {
         const jwt = require('jsonwebtoken');
@@ -472,7 +451,6 @@ app.get('/api/ordini/storico-personale', async (req, res) => {
     }
 });
 
-// --- Forza inserimento pizze ---
 app.get('/api/forza-inserimento', async (req, res) => {
     try {
         await seedPizze();
@@ -482,20 +460,17 @@ app.get('/api/forza-inserimento', async (req, res) => {
     }
 });
 
-// --- Rotte principali ---
 app.use('/api/auth', authRoutes); 
 app.use('/api/pizze', pizzaRoutes);
 app.use('/api/ordini', orderRoutes);
 app.use('/api/rewards', rewardRoutes);
 app.use('/api/categorie', require('./routes/categorieRoutes'));
 
-// --- Gestore errori globale ---
 app.use((err, req, res, next) => {
     console.error("[ERRORE GENERALE]", err.message);
     res.status(500).json({ error: err.message });
 });
 
-// --- Avvio server locale (solo in dev) ---
 const PORT = process.env.PORT || 3000;
 if (process.env.NODE_ENV !== 'production') {
     app.listen(PORT, () => {
