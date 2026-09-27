@@ -33,7 +33,9 @@ router.get('/tutti', authMiddleware, async (req, res) => {
         if (!['gestore', 'staff', 'pizzaiolo'].includes(req.user.role)) {
             return res.status(403).json({ error: 'Non autorizzato' });
         }
-        const rewards = await Reward.find().sort({ ordine: 1, puntiRichiesti: 1 });
+        const rewards = await Reward.find()
+            .populate('prodottoId', 'nome categoria prezzo')
+            .sort({ ordine: 1, puntiRichiesti: 1 });
         res.json(rewards);
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -55,7 +57,7 @@ router.post('/', authMiddleware, async (req, res) => {
         if (!['gestore', 'staff', 'pizzaiolo'].includes(req.user.role)) {
             return res.status(403).json({ error: 'Solo lo staff può creare premi' });
         }
-                const { nome, descrizione, puntiRichiesti, foto, categoria, prodottoId, attivo } = req.body;
+        const { nome, descrizione, puntiRichiesti, foto, categoria, prodottoId, attivo } = req.body;
         if (!nome || !puntiRichiesti || puntiRichiesti < 1) {
             return res.status(400).json({ error: 'Nome e punti richiesti sono obbligatori' });
         }
@@ -67,7 +69,8 @@ router.post('/', authMiddleware, async (req, res) => {
             attivo: attivo !== false
         });
         await reward.save();
-        res.status(201).json(reward);
+        const populated = await Reward.findById(reward._id).populate('prodottoId', 'nome categoria prezzo');
+        res.status(201).json(populated);
     } catch (e) {
         res.status(400).json({ error: e.message });
     }
@@ -78,7 +81,8 @@ router.patch('/:id', authMiddleware, async (req, res) => {
         if (!['gestore', 'staff', 'pizzaiolo'].includes(req.user.role)) {
             return res.status(403).json({ error: 'Solo lo staff può modificare premi' });
         }
-        const updated = await Reward.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        const updated = await Reward.findByIdAndUpdate(req.params.id, req.body, { new: true })
+            .populate('prodottoId', 'nome categoria prezzo');
         if (!updated) return res.status(404).json({ error: 'Premio non trovato' });
         res.json(updated);
     } catch (e) {
