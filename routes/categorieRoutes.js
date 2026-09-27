@@ -23,7 +23,6 @@ const authStaff = (req, res, next) => {
     }
 };
 
-// Lettura pubblica: serve al menu per nascondere le categorie spente
 router.get('/stato', async (req, res) => {
     try {
         let doc = await ImpostazioniCategorie.findOne();
@@ -34,7 +33,6 @@ router.get('/stato', async (req, res) => {
     }
 });
 
-// Scrittura protetta: solo staff
 router.patch('/stato', authStaff, async (req, res) => {
     try {
         const { categorieDisattivate } = req.body;
